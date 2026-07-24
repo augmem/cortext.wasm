@@ -169,7 +169,8 @@ runtime `writeModelFile` is optional for demos.
 
 ### C) Publish path
 
-`prepublishOnly` runs `npm run build` and `scripts/check-wasm.mjs`, which
+`prepublishOnly` runs `npm run test:unit` (build + unit/package tests) then
+`scripts/check-wasm.mjs`, which
 requires vendored assets. CI unit tests do **not** require the binaries.
 
 ## API
