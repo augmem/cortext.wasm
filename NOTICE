@@ -1,0 +1,45 @@
+Cortext WebAssembly Binding Notices
+===================================
+
+This package (`@augmem/cortext-wasm`) is the browser WebAssembly language
+binding for Cortext. The TypeScript/JavaScript wrapper is Apache-2.0.
+
+Vendored Emscripten outputs (`assets/cortext.js`, `assets/cortext.wasm`) are
+built from the Cortext engine (https://github.com/augmem/cortext) and inherit
+that project's third-party obligations. Engine-side third-party components
+commonly include:
+
+SQLite
+------
+
+Upstream: https://sqlite.org/
+License: Public domain for the SQLite deliverable code and documentation.
+
+sqlite-vec
+----------
+
+Upstream: https://github.com/asg017/sqlite-vec
+License: Dual MIT OR Apache-2.0.
+
+sqlite-objstore
+---------------
+
+Upstream: https://github.com/augmem/sqlite-objstore
+License: Apache-2.0.
+
+BLAKE3
+------
+
+Upstream: https://github.com/BLAKE3-team/BLAKE3
+License: CC0-1.0, with Apache-2.0 and Apache-2.0 with LLVM exceptions texts
+also bundled by upstream for consumers who prefer those terms.
+
+Emscripten runtime glue
+-----------------------
+
+The generated `assets/cortext.js` loader is produced by the Emscripten
+toolchain (https://emscripten.org/). Refer to the Emscripten project for
+runtime license terms applicable to the generated glue.
+
+For the authoritative engine NOTICE, see the matching release of
+https://github.com/augmem/cortext.

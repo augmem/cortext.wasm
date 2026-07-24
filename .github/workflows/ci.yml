@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No oversize binaries committed
+        run: |
+          set -euo pipefail
+          found="$(find . -type f -size +95M -not -path './.git/*' | head || true)"
+          if [[ -n "$found" ]]; then
+            echo "Files over GitHub soft limit:"
+            echo "$found"
+            exit 1
+          fi
+          if find assets -type f \( -name 'cortext.wasm' -o -name 'cortext.js' \) 2>/dev/null | grep -q .; then
+            echo "assets/cortext.{js,wasm} must not be committed; vendor in CI / prepublish instead"
+            find assets -type f \( -name 'cortext.wasm' -o -name 'cortext.js' \)
+            exit 1
+          fi
+          echo "source-check ok"
+
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node-version: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build and unit tests
+        run: npm run test:unit
+
+      - name: Optional WASM smoke
+        run: |
+          set -euo pipefail
+          # Prefer sibling monorepo artifact when CI has a multi-checkout layout.
+          if [[ -d ../cortext/build-wasm/dist/wasm ]]; then
+            npm run vendor:wasm -- --force || true
+          fi
+          node scripts/check-wasm.mjs --optional
+          if [[ -f assets/cortext.wasm && -f assets/cortext.js ]]; then
+            npm run build
+            node --test tests/smoke.test.mjs
+          else
+            echo "No WASM assets present; smoke skipped"
+          fi

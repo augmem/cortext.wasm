@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build
+/dist/
+*.tsbuildinfo
+
+# Pack artifacts
+*.tgz
+/pack/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Vendored Emscripten artifacts (copy via npm run vendor:wasm; publish ships them)
+/assets/cortext.js
+/assets/cortext.wasm
+/assets/.vendor-source
+
+# Optional local model trees
+/models/
+.cortext-assets/
+**/AIST-87M-GGUF/AIST-87M_q8_0.gguf
+**/AIST-87M-GGUF/AIST-87M_q5_1.gguf
+
+# Test / coverage
+/coverage/
+.nyc_output/
+
+# Env
+.env
+.env.*

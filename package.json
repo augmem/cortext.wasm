@@ -1,0 +1,81 @@
+{
+  "name": "@augmem/cortext-wasm",
+  "version": "1.2.4",
+  "description": "Browser WebAssembly bindings for the Cortext memory engine",
+  "license": "Apache-2.0",
+  "author": "augmem",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./module": {
+      "import": "./assets/cortext.js",
+      "default": "./assets/cortext.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/**/*",
+    "assets/**/*",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": [
+    "./assets/cortext.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/augmem/cortext.wasm.git"
+  },
+  "homepage": "https://github.com/augmem/cortext.wasm#readme",
+  "bugs": {
+    "url": "https://github.com/augmem/cortext.wasm/issues"
+  },
+  "keywords": [
+    "cortext",
+    "memory",
+    "retrieval",
+    "embeddings",
+    "llm",
+    "agents",
+    "wasm",
+    "webassembly",
+    "browser",
+    "emscripten",
+    "typescript",
+    "javascript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build:types": "tsc -p tsconfig.types.json",
+    "build:esm": "tsc -p tsconfig.esm.json && node scripts/write-esm-package.mjs",
+    "build:cjs": "tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
+    "build": "npm run clean && npm run build:types && npm run build:esm && npm run build:cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:unit": "npm run build && node --test tests/unit.test.mjs tests/package.test.mjs",
+    "vendor:wasm": "node scripts/vendor-wasm.mjs",
+    "check:wasm": "node scripts/check-wasm.mjs",
+    "prepublishOnly": "npm run build && node scripts/check-wasm.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "typescript": "^5.7.0"
+  }
+}
