@@ -27,5 +27,13 @@ export type {
   WriteModelFileOptions,
 } from "./types.js";
 
-/** Binding package version (tracks engine line). */
+/**
+ * Binding package version (this npm package).
+ * Target engine line is documented in `ENGINE_VERSION` (default 1.2.4).
+ * A vendored `assets/cortext.wasm` may report an older engine `version()` until
+ * rebuilt from the monorepo — always check `runtime.version()` at runtime.
+ */
 export const PACKAGE_VERSION = "1.2.4";
+
+/** Intended engine assets / C ABI line for this binding release. */
+export const ENGINE_VERSION_TARGET = "1.2.4";

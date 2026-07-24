@@ -97,8 +97,20 @@ for (const name of ["cortext.js", "cortext.wasm"]) {
   console.log(`copied ${name} (${st.size} bytes) from ${source}`);
 }
 
+// Portable provenance only (no absolute local paths — publish gate rejects them).
+const relHint = path.relative(root, source).startsWith("..")
+  ? "external-or-sibling-dist"
+  : path.relative(root, source);
+const enginePin = fs.existsSync(path.join(root, "ENGINE_VERSION"))
+  ? fs.readFileSync(path.join(root, "ENGINE_VERSION"), "utf8").trim()
+  : "unknown";
 fs.writeFileSync(
   path.join(assetsDir, ".vendor-source"),
-  `${source}\n${new Date().toISOString()}\n`
+  [
+    `engine_version_target=${enginePin}`,
+    `source_kind=${relHint}`,
+    `vendored_at=${new Date().toISOString()}`,
+    "",
+  ].join("\n")
 );
 console.log("vendor:wasm complete");

@@ -20,12 +20,17 @@
       "import": "./assets/cortext.js",
       "default": "./assets/cortext.js"
     },
+    "./cortext.wasm": "./assets/cortext.wasm",
+    "./assets/cortext.wasm": "./assets/cortext.wasm",
+    "./assets/cortext.js": "./assets/cortext.js",
     "./package.json": "./package.json"
   },
   "files": [
     "dist/**/*",
     "types/**/*",
-    "assets/**/*",
+    "assets/cortext.js",
+    "assets/cortext.wasm",
+    "ENGINE_VERSION",
     "README.md",
     "LICENSE",
     "NOTICE",
@@ -73,7 +78,7 @@
     "test:unit": "npm run build && node --test tests/unit.test.mjs tests/package.test.mjs",
     "vendor:wasm": "node scripts/vendor-wasm.mjs",
     "check:wasm": "node scripts/check-wasm.mjs",
-    "prepublishOnly": "npm run build && node scripts/check-wasm.mjs",
+    "prepublishOnly": "npm run test:unit && node scripts/check-wasm.mjs",
     "pack:check": "npm pack --dry-run"
   },
   "devDependencies": {

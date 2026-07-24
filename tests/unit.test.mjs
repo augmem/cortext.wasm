@@ -83,30 +83,59 @@ test("CortextWasm class is exported", () => {
   assert.equal(esm.PACKAGE_VERSION, "1.2.4");
 });
 
-test("CortextWasm processText validates retention without loading WASM", () => {
-  const fake = {
+function makeFakeModule(overrides = {}) {
+  let nextPtr = 16;
+  const strings = new Map();
+  return {
     FS: { mkdir() {}, writeFile() {} },
-    HEAPU8: new Uint8Array(0),
-    HEAPF32: new Float32Array(0),
-    _malloc: () => 0,
+    HEAPU8: new Uint8Array(4096),
+    HEAPF32: new Float32Array(1024),
+    _malloc: (n) => {
+      const ptr = nextPtr;
+      nextPtr += Math.max(n, 8);
+      return ptr;
+    },
     _free() {},
-    lengthBytesUTF8: () => 0,
+    lengthBytesUTF8: (s) => Buffer.byteLength(s, "utf8"),
     stringToUTF8() {},
-    UTF8ToString: () => "",
-    _cortext_create: () => 0,
+    UTF8ToString: (ptr) => strings.get(ptr) ?? "",
+    _cortext_create: () => 1,
     _cortext_free() {},
     _cortext_reset: () => 0,
     _cortext_flush: () => 0,
     _cortext_consolidate: () => 0,
-    _cortext_version: () => 0,
+    _cortext_version: () => {
+      const ptr = nextPtr;
+      nextPtr += 16;
+      strings.set(ptr, "1.2.0");
+      return ptr;
+    },
     _cortext_last_error: () => 0,
-    _cortext_string_free() {},
+    _cortext_string_free(ptr) {
+      strings.delete(ptr);
+    },
     _cortext_embed_text_json: () => 0,
     _cortext_embed_audio_json: () => 0,
     _cortext_embed_image_json: () => 0,
-    _cortext_wasm_process_text_json: () => 0,
+    _cortext_wasm_process_text_json: () => {
+      const ptr = nextPtr;
+      nextPtr += 16;
+      strings.set(
+        ptr,
+        JSON.stringify({
+          consolidation_recommended: true,
+          consolidation_required: false,
+          should_interrupt: false,
+        })
+      );
+      return ptr;
+    },
+    ...overrides,
   };
-  const runtime = new esm.CortextWasm(fake);
+}
+
+test("CortextWasm processText validates retention without loading WASM", () => {
+  const runtime = new esm.CortextWasm(makeFakeModule({ _malloc: () => 0 }));
   assert.throws(
     () => runtime.processText(1, "x", "s", { retention: "nope" }),
     /retention must be/
@@ -115,4 +144,26 @@ test("CortextWasm processText validates retention without loading WASM", () => {
     () => runtime.embedImage(1, new Uint8Array(1), 0, 1, 3),
     /positive integers/
   );
+});
+
+test("CortextWasm processText normalizes legacy consolidation flags", () => {
+  const runtime = new esm.CortextWasm(makeFakeModule());
+  const ctx = runtime.processText(1, "hello", "browser", {
+    retention: "ephemeral",
+    includeEmbedding: false,
+  });
+  assert.equal(ctx.consolidation_state, "recommended");
+  assert.equal(ctx.should_interrupt, false);
+});
+
+test("validateImageBuffer rejects oversize dimensions", () => {
+  assert.throws(
+    () => esm.validateImageBuffer(new Uint8Array(1), 0x80000000, 1, 1),
+    /native int range|positive integers|overflow/
+  );
+});
+
+test("PACKAGE_VERSION and ENGINE_VERSION_TARGET are exported", () => {
+  assert.equal(esm.PACKAGE_VERSION, "1.2.4");
+  assert.equal(esm.ENGINE_VERSION_TARGET, "1.2.4");
 });

@@ -19,9 +19,15 @@ test("package.json follows dual-package publish conventions", () => {
   assert.ok(pkg.engines?.node);
   assert.equal(pkg.publishConfig?.access, "public");
   assert.ok(pkg.files.includes("dist/**/*"));
-  assert.ok(pkg.files.includes("assets/**/*"));
+  assert.ok(
+    pkg.files.includes("assets/**/*") ||
+      (pkg.files.includes("assets/cortext.js") &&
+        pkg.files.includes("assets/cortext.wasm"))
+  );
+  assert.ok(pkg.files.includes("ENGINE_VERSION"));
   assert.ok(pkg.repository?.url?.includes("cortext.wasm"));
   assert.ok(pkg.scripts?.prepublishOnly);
+  assert.match(pkg.scripts.prepublishOnly, /test:unit/);
   assert.ok(pkg.scripts?.build);
   assert.equal(pkg.main, "./dist/cjs/index.js");
   assert.equal(pkg.module, "./dist/esm/index.js");
@@ -30,6 +36,7 @@ test("package.json follows dual-package publish conventions", () => {
   assert.ok(pkg.exports["."].require);
   assert.ok(pkg.exports["."].types);
   assert.ok(pkg.exports["./module"]);
+  assert.ok(pkg.exports["./cortext.wasm"]);
 });
 
 test("required root files exist", () => {

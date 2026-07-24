@@ -12,7 +12,10 @@ package **`@augmem/cortext-wasm`**.
 > **Not** `@augmem/cortext` — that package is the Node N-API binding in
 > [`cortext.ts`](https://github.com/augmem/cortext.ts).
 
-Binding **1.2.4** tracks engine **v1.2.4**.
+Binding package **1.2.4** targets engine line **v1.2.4** (`ENGINE_VERSION`).
+The vendored Emscripten binary reports its own identity via
+`runtime.version()` — rebuild monorepo WASM after engine bumps before
+claiming binary parity.
 
 ## Install
 
@@ -67,11 +70,15 @@ const { CortextWasm } = require("@augmem/cortext-wasm");
 import { CortextWasm } from "@augmem/cortext-wasm";
 import createCortextModule from "@augmem/cortext-wasm/module";
 
+// Glue at `@augmem/cortext-wasm/module` resolves `cortext.wasm` as a sibling
+// under `assets/` by default. Pin only if your bundler rewrites asset URLs:
 const runtime = await CortextWasm.create(createCortextModule, {
-  // Optional: pin the .wasm URL when not served next to the glue
   locateFile: (file) =>
     file.endsWith(".wasm")
-      ? new URL("cortext.wasm", import.meta.url).href
+      ? new URL(
+          // package export: `@augmem/cortext-wasm/cortext.wasm`
+          import.meta.resolve("@augmem/cortext-wasm/cortext.wasm")
+        ).href
       : file,
 });
 

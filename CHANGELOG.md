@@ -8,6 +8,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [1.2.4] - 2026-07-24
 
+### Fixed (review r1)
+
+- Honest engine-line pin via `ENGINE_VERSION` / `ENGINE_VERSION_TARGET` (vendored
+  binary may still report an older `version()` until rebuild).
+- Strengthened `check-wasm` (size + WASM magic; reject absolute `.vendor-source`).
+- Package exports for `cortext.wasm` assets; class-level `processText`
+  normalization test; image overflow test; `prepublishOnly` runs unit tests.
+- README locateFile example uses package export resolution.
+
 ### Added
 
 - Standalone **cortext.wasm** repository for browser WebAssembly bindings.

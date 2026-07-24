@@ -29,7 +29,13 @@ jobs:
             find assets -type f \( -name 'cortext.wasm' -o -name 'cortext.js' \)
             exit 1
           fi
-          echo "source-check ok"
+          if [[ -f assets/.vendor-source ]]; then
+            if grep -E '(/Users/|/home/|[A-Za-z]:\\)' assets/.vendor-source; then
+              echo "assets/.vendor-source must not contain absolute local paths"
+              exit 1
+            fi
+          fi
+          echo "source-check ok (CI proves package layout + unit tests; full browser WASM E2E is out of scope)"
 
   build-and-test:
     runs-on: ${{ matrix.os }}
