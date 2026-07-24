@@ -16,6 +16,7 @@
       "default": "./dist/esm/index.js"
     },
     "./module": {
+      "types": "./types/module.d.ts",
       "import": "./assets/cortext.js",
       "default": "./assets/cortext.js"
     },
@@ -23,6 +24,7 @@
   },
   "files": [
     "dist/**/*",
+    "types/**/*",
     "assets/**/*",
     "README.md",
     "LICENSE",
