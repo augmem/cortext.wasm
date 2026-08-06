@@ -22,6 +22,7 @@ export type {
   CortextMemory,
   CortextModuleFactory,
   CreateContextOptions,
+  Media,
   ProcessOptions,
   Retention,
   WriteModelFileOptions,

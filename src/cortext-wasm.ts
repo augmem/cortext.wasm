@@ -10,6 +10,7 @@ import type {
   CortextHandle,
   CortextModuleFactory,
   CreateContextOptions,
+  Media,
   ProcessOptions,
   WriteModelFileOptions,
 } from "./types.js";
@@ -188,6 +189,99 @@ export class CortextWasm {
     }
   }
 
+  /**
+   * Process canonical text while storing an optional caller-provided media
+   * payload. The payload bytes are copied into WASM memory and passed with
+   * their MIME type; the text remains the canonical embedding input.
+   *
+   * Requires a WASM module built from the media-capable C API. Passing null
+   * preserves the C API's no-payload behavior without changing processText.
+   */
+  processTextWithMedia(
+    handle: CortextHandle,
+    text: string,
+    sourceId = "browser",
+    media: Media | null = null,
+    { includeEmbedding = true, retention = "natural" }: ProcessOptions = {}
+  ): CortextContext {
+    // Validate retention before any WASM allocation, matching processText.
+    const retentionCode = retentionValue(retention);
+    let textPtr = 0;
+    let sourcePtr = 0;
+    let dataPtr = 0;
+    let mimetypePtr = 0;
+    let mediaPtr = 0;
+    let optionsPtr = 0;
+    try {
+      textPtr = this.#writeString(text);
+      sourcePtr = this.#writeString(sourceId);
+
+      if (media !== null) {
+        const data =
+          media.data instanceof Uint8Array
+            ? media.data
+            : new Uint8Array(media.data);
+        if (data.byteLength > 0xffffffff) {
+          throw new RangeError("media payload exceeds the native size range");
+        }
+        if (typeof media.mimetype !== "string") {
+          throw new TypeError("media mimetype must be a string");
+        }
+
+        if (data.byteLength > 0) {
+          dataPtr = this.module._malloc(data.byteLength);
+          if (!dataPtr) {
+            throw new Error("Failed to allocate media buffer");
+          }
+          this.module.HEAPU8.set(data, dataPtr);
+        }
+        mimetypePtr = this.#writeString(media.mimetype);
+
+        // cortext_media is { const uint8_t* data; size_t size;
+        // const char* mimetype; }. Emscripten's wasm32 ABI uses 12 bytes.
+        mediaPtr = this.module._malloc(12);
+        if (!mediaPtr) {
+          throw new Error("Failed to allocate media descriptor");
+        }
+        this.#writeUint32(mediaPtr, dataPtr);
+        this.#writeUint32(mediaPtr + 4, data.byteLength);
+        this.#writeUint32(mediaPtr + 8, mimetypePtr);
+      }
+
+      // cortext_process_json_options is { size_t struct_size; int
+      // include_embedding; int retention; int reserved; } (16 bytes on
+      // wasm32). Use the media-capable JSON C API directly so arbitrary bytes
+      // are not coerced through a JavaScript string or base64 representation.
+      optionsPtr = this.module._malloc(16);
+      if (!optionsPtr) {
+        throw new Error("Failed to allocate process options");
+      }
+      this.#writeUint32(optionsPtr, 16);
+      this.#writeUint32(optionsPtr + 4, includeEmbedding ? 1 : 0);
+      this.#writeUint32(optionsPtr + 8, retentionCode);
+      this.#writeUint32(optionsPtr + 12, 0);
+
+      return normalizeContext(
+        this.#readRawJson(
+          this.module._cortext_process_text_with_media_json_with_options(
+            handle,
+            textPtr,
+            sourcePtr,
+            mediaPtr,
+            optionsPtr
+          )
+        )
+      );
+    } finally {
+      if (optionsPtr) this.module._free(optionsPtr);
+      if (mediaPtr) this.module._free(mediaPtr);
+      if (mimetypePtr) this.module._free(mimetypePtr);
+      if (dataPtr) this.module._free(dataPtr);
+      if (sourcePtr) this.module._free(sourcePtr);
+      if (textPtr) this.module._free(textPtr);
+    }
+  }
+
   embedAudio(
     handle: CortextHandle,
     samples: Float32Array | ArrayLike<number>
@@ -246,6 +340,17 @@ export class CortextWasm {
     } finally {
       this.module._free(dataPtr);
     }
+  }
+
+  #writeUint32(ptr: number, value: number): void {
+    if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
+      throw new RangeError("WASM field exceeds the uint32 range");
+    }
+    const heap = this.module.HEAPU8;
+    heap[ptr] = value & 0xff;
+    heap[ptr + 1] = (value >>> 8) & 0xff;
+    heap[ptr + 2] = (value >>> 16) & 0xff;
+    heap[ptr + 3] = (value >>> 24) & 0xff;
   }
 
   #writeString(value: string): number {

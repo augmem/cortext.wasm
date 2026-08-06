@@ -86,9 +86,10 @@ test("CortextWasm class is exported", () => {
 function makeFakeModule(overrides = {}) {
   let nextPtr = 16;
   const strings = new Map();
-  return {
+  const heapU8 = new Uint8Array(4096);
+  const module = {
     FS: { mkdir() {}, writeFile() {} },
-    HEAPU8: new Uint8Array(4096),
+    HEAPU8: heapU8,
     HEAPF32: new Float32Array(1024),
     _malloc: (n) => {
       const ptr = nextPtr;
@@ -97,8 +98,13 @@ function makeFakeModule(overrides = {}) {
     },
     _free() {},
     lengthBytesUTF8: (s) => Buffer.byteLength(s, "utf8"),
-    stringToUTF8() {},
+    stringToUTF8: (value, ptr, maxBytesToWrite) => {
+      const bytes = new TextEncoder().encode(value);
+      heapU8.set(bytes.subarray(0, maxBytesToWrite - 1), ptr);
+      heapU8[ptr + Math.min(bytes.length, maxBytesToWrite - 1)] = 0;
+    },
     UTF8ToString: (ptr) => strings.get(ptr) ?? "",
+    _setString: (ptr, value) => strings.set(ptr, value),
     _cortext_create: () => 1,
     _cortext_free() {},
     _cortext_reset: () => 0,
@@ -130,8 +136,21 @@ function makeFakeModule(overrides = {}) {
       );
       return ptr;
     },
-    ...overrides,
+    _cortext_process_text_with_media_json_with_options: () => {
+      const ptr = nextPtr;
+      nextPtr += 16;
+      strings.set(
+        ptr,
+        JSON.stringify({
+          consolidation_recommended: true,
+          consolidation_required: false,
+          should_interrupt: false,
+        })
+      );
+      return ptr;
+    },
   };
+  return Object.assign(module, overrides);
 }
 
 test("CortextWasm processText validates retention without loading WASM", () => {
@@ -154,6 +173,79 @@ test("CortextWasm processText normalizes legacy consolidation flags", () => {
   });
   assert.equal(ctx.consolidation_state, "recommended");
   assert.equal(ctx.should_interrupt, false);
+});
+
+test("CortextWasm processTextWithMedia preserves binary payload and MIME", () => {
+  let captured;
+  const fake = makeFakeModule();
+  fake._cortext_process_text_with_media_json_with_options = (
+    _handle,
+    _textPtr,
+    _sourcePtr,
+    mediaPtr,
+    optionsPtr
+  ) => {
+    const readU32 = (ptr) =>
+      fake.HEAPU8[ptr] |
+      (fake.HEAPU8[ptr + 1] << 8) |
+      (fake.HEAPU8[ptr + 2] << 16) |
+      (fake.HEAPU8[ptr + 3] << 24);
+    const dataPtr = readU32(mediaPtr);
+    const size = readU32(mediaPtr + 4);
+    const mimetypePtr = readU32(mediaPtr + 8);
+    const mimeBytes = [];
+    for (let ptr = mimetypePtr; fake.HEAPU8[ptr] !== 0; ptr++) {
+      mimeBytes.push(fake.HEAPU8[ptr]);
+    }
+    captured = {
+      bytes: Array.from(fake.HEAPU8.slice(dataPtr, dataPtr + size)),
+      mimetype: new TextDecoder().decode(new Uint8Array(mimeBytes)),
+      includeEmbedding: readU32(optionsPtr + 4),
+      retention: readU32(optionsPtr + 8),
+    };
+    const resultPtr = fake._malloc(16);
+    fake._setString(
+      resultPtr,
+      JSON.stringify({ consolidation_recommended: true, should_interrupt: false })
+    );
+    return resultPtr;
+  };
+
+  const runtime = new esm.CortextWasm(fake);
+  const ctx = runtime.processTextWithMedia(
+    1,
+    "canonical text",
+    "browser",
+    {
+      data: new Uint8Array([0, 255, 1, 128]),
+      mimetype: "application/octet-stream",
+    },
+    { includeEmbedding: false, retention: "ephemeral" }
+  );
+
+  assert.deepEqual(captured, {
+    bytes: [0, 255, 1, 128],
+    mimetype: "application/octet-stream",
+    includeEmbedding: 0,
+    retention: 3,
+  });
+  assert.equal(ctx.consolidation_state, "recommended");
+  assert.equal(ctx.should_interrupt, false);
+});
+
+test("CortextWasm processTextWithMedia validates retention before allocation", () => {
+  const runtime = new esm.CortextWasm(makeFakeModule({ _malloc: () => 0 }));
+  assert.throws(
+    () =>
+      runtime.processTextWithMedia(
+        1,
+        "text",
+        "source",
+        { data: new Uint8Array([1]), mimetype: "application/octet-stream" },
+        { retention: "invalid" }
+      ),
+    /retention must be/
+  );
 });
 
 test("validateImageBuffer rejects oversize dimensions", () => {

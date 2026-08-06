@@ -19,6 +19,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `CortextWasm.processTextWithMedia` forwards canonical text plus arbitrary
+  binary media and MIME metadata through the media-capable JSON C API.
 - Standalone **cortext.wasm** repository for browser WebAssembly bindings.
 - Dual-package publish layout: ESM (browser-first) + CJS + `.d.ts`.
 - TypeScript port of monorepo `bindings/wasm/cortext.js` as `CortextWasm`.
