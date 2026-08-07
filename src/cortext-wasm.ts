@@ -206,6 +206,13 @@ export class CortextWasm {
   ): CortextContext {
     // Validate retention before any WASM allocation, matching processText.
     const retentionCode = retentionValue(retention);
+    const processTextWithMedia =
+      this.module._cortext_process_text_with_media_json_with_options;
+    if (typeof processTextWithMedia !== "function") {
+      throw new Error(
+        "processTextWithMedia requires a media-capable WASM asset; update the loaded asset before calling this method"
+      );
+    }
     let textPtr = 0;
     let sourcePtr = 0;
     let dataPtr = 0;
@@ -263,7 +270,7 @@ export class CortextWasm {
 
       return normalizeContext(
         this.#readRawJson(
-          this.module._cortext_process_text_with_media_json_with_options(
+          processTextWithMedia(
             handle,
             textPtr,
             sourcePtr,

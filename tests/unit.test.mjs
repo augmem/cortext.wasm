@@ -175,6 +175,21 @@ test("CortextWasm processText normalizes legacy consolidation flags", () => {
   assert.equal(ctx.should_interrupt, false);
 });
 
+test("CortextWasm processTextWithMedia rejects old WASM assets", () => {
+  const fake = makeFakeModule({
+    _cortext_process_text_with_media_json_with_options: undefined,
+    _malloc: () => {
+      throw new Error("WASM allocation should not be attempted");
+    },
+  });
+  const runtime = new esm.CortextWasm(fake);
+
+  assert.throws(
+    () => runtime.processTextWithMedia(1, "canonical text"),
+    /processTextWithMedia requires a media-capable WASM asset/
+  );
+});
+
 test("CortextWasm processTextWithMedia preserves binary payload and MIME", () => {
   let captured;
   const fake = makeFakeModule();
@@ -217,7 +232,7 @@ test("CortextWasm processTextWithMedia preserves binary payload and MIME", () =>
     "canonical text",
     "browser",
     {
-      data: new Uint8Array([0, 255, 1, 128]),
+      data: new Uint8Array([0, 255, 1, 128]).buffer,
       mimetype: "application/octet-stream",
     },
     { includeEmbedding: false, retention: "ephemeral" }

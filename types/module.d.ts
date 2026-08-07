@@ -54,7 +54,7 @@ declare module "@augmem/cortext-wasm/module" {
       includeEmbedding: number,
       retention: number
     ): number;
-    _cortext_process_text_with_media_json_with_options(
+    _cortext_process_text_with_media_json_with_options?(
       handle: number,
       textPtr: number,
       sourcePtr: number,
