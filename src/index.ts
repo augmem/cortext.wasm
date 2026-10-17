@@ -20,6 +20,7 @@ export type {
   CortextEmscriptenModule,
   CortextHandle,
   CortextMemory,
+  CortextMemoryContent,
   CortextModuleFactory,
   CreateContextOptions,
   ProcessOptions,

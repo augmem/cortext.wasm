@@ -12,15 +12,30 @@ export interface CortextConfig {
   signalFilterTextEnabled?: boolean;
 }
 
+/** One stored signal payload of a memory, in signal order. */
+export interface CortextMemoryContent {
+  size_bytes: number;
+  /** MIME type of this payload (for example "text/plain" or "image/jpeg"). */
+  mimetype: string;
+  /** Payload bytes, base64-encoded; decode according to `mimetype`. */
+  base64: string;
+}
+
 /** One retrieved or working-memory item from process* output. */
 export interface CortextMemory {
   id?: number | string;
   memory_id?: number | string;
-  text?: string;
   source_id?: string;
   timestamp?: number;
+  /**
+   * The modality the memory's signals share ("text", "audio", "image"), or
+   * "mixed" when its signals have different modalities.
+   */
   modality?: string;
+  /** MIME type of the memory's first signal; see `content` for every payload. */
   mimetype?: string;
+  /** Every signal payload of the memory, each with its own MIME type. */
+  content?: CortextMemoryContent[];
   relevance?: number;
   composite_score?: number;
   salience?: number;

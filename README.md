@@ -107,7 +107,10 @@ try {
   );
 
   for (const item of ctx.retrieved_memory ?? []) {
-    console.log(item.text, item.relevance, item.composite_score);
+    // Every signal payload of the memory, each with its own MIME type;
+    // modality is the one its signals share, or "mixed".
+    const payloads = (item.content ?? []).map((c) => c.mimetype);
+    console.log(item.modality, payloads, item.relevance, item.composite_score);
   }
 
   if (ctx.consolidation_state !== "none") {
