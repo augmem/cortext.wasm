@@ -6,7 +6,6 @@ export interface CortextConfig {
   affectInterrupt?: boolean;
   affectRetrieval?: boolean;
   reinforcementEnabled?: boolean;
-  proceduralEnabled?: boolean;
   sequentialEdgesEnabled?: boolean;
   signalFilterAudioEnabled?: boolean;
   signalFilterImageEnabled?: boolean;
@@ -27,7 +26,6 @@ export interface CortextMemory {
   salience?: number;
   contradiction?: number;
   usage_count?: number;
-  soft_anchors?: unknown[];
   [key: string]: unknown;
 }
 
