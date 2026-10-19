@@ -36,6 +36,28 @@ export function retentionValue(retention: Retention = "natural"): number {
 }
 
 /**
+ * Validate an evidence budget (bytes) for the C ABI: omitted or 0 = unset.
+ * @throws {TypeError} when the value is not a whole number of bytes that fits
+ * the 32-bit WASM size_t.
+ */
+export function evidenceBudgetValue(evidenceBudgetBytes?: number): number {
+  if (evidenceBudgetBytes === undefined) {
+    return 0;
+  }
+  if (
+    typeof evidenceBudgetBytes !== "number" ||
+    !Number.isInteger(evidenceBudgetBytes) ||
+    evidenceBudgetBytes < 0 ||
+    evidenceBudgetBytes > 0xffffffff
+  ) {
+    throw new TypeError(
+      "evidenceBudgetBytes must be a whole number of bytes (0 to 2^32-1)"
+    );
+  }
+  return evidenceBudgetBytes;
+}
+
+/**
  * Ensure public process* objects always expose `consolidation_state`.
  * Older engine JSON emitted boolean consolidation_recommended/required only.
  */

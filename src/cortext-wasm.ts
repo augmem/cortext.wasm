@@ -1,5 +1,6 @@
 import {
   normalizeContext,
+  evidenceBudgetValue,
   retentionValue,
   validateImageBuffer,
 } from "./normalize.js";
@@ -164,10 +165,15 @@ export class CortextWasm {
     handle: CortextHandle,
     text: string,
     sourceId = "browser",
-    { includeEmbedding = true, retention = "natural" }: ProcessOptions = {}
+    {
+      includeEmbedding = true,
+      retention = "natural",
+      evidenceBudgetBytes,
+    }: ProcessOptions = {}
   ): CortextContext {
-    // Validate retention before WASM allocations so callers get a clean TypeError.
+    // Validate options before WASM allocations so callers get a clean TypeError.
     const retentionCode = retentionValue(retention);
+    const evidenceBudget = evidenceBudgetValue(evidenceBudgetBytes);
     const textPtr = this.#writeString(text);
     const sourcePtr = this.#writeString(sourceId);
     try {
@@ -178,7 +184,8 @@ export class CortextWasm {
             textPtr,
             sourcePtr,
             includeEmbedding ? 1 : 0,
-            retentionCode
+            retentionCode,
+            evidenceBudget
           )
         )
       );

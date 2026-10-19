@@ -25,6 +25,46 @@ test("retentionValue rejects invalid values", () => {
   assert.throws(() => esm.retentionValue(1.5), /retention must be/);
 });
 
+test("evidenceBudgetValue maps unset to 0 and keeps whole bytes", () => {
+  assert.equal(esm.evidenceBudgetValue(), 0);
+  assert.equal(esm.evidenceBudgetValue(0), 0);
+  assert.equal(esm.evidenceBudgetValue(34_800), 34_800);
+  assert.equal(esm.evidenceBudgetValue(0xffffffff), 0xffffffff);
+});
+
+test("evidenceBudgetValue rejects invalid values", () => {
+  assert.throws(() => esm.evidenceBudgetValue(-1), /evidenceBudgetBytes/);
+  assert.throws(() => esm.evidenceBudgetValue(1.5), /evidenceBudgetBytes/);
+  assert.throws(() => esm.evidenceBudgetValue(2 ** 32), /evidenceBudgetBytes/);
+  assert.throws(() => esm.evidenceBudgetValue("8000"), /evidenceBudgetBytes/);
+});
+
+test("processText passes the evidence budget to the WASM export", () => {
+  const calls = [];
+  const fakeModule = {
+    _malloc: () => 8,
+    _free: () => {},
+    lengthBytesUTF8: (s) => s.length,
+    stringToUTF8: () => {},
+    UTF8ToString: () => '{"consolidation_state":"none","standing_memory":[],"retrieved_memory":[]}',
+    _cortext_string_free: () => {},
+    _cortext_wasm_process_text_json: (...args) => {
+      calls.push(args);
+      return 16;
+    },
+  };
+  const wasm = new esm.CortextWasm(fakeModule);
+  const ctx = wasm.processText(1, "q", "query", {
+    retention: "ephemeral",
+    evidenceBudgetBytes: 34_800,
+  });
+  assert.deepEqual(ctx.standing_memory, []);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].slice(3), [1, 3, 34_800]);
+  wasm.processText(1, "q", "query", { retention: "ephemeral" });
+  assert.deepEqual(calls[1].slice(3), [1, 3, 0]);
+});
+
 test("normalizeContext keeps string consolidation_state", () => {
   const out = esm.normalizeContext({
     consolidation_state: "recommended",

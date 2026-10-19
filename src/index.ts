@@ -9,6 +9,7 @@
 export { CortextWasm } from "./cortext-wasm.js";
 export {
   normalizeContext,
+  evidenceBudgetValue,
   retentionValue,
   validateImageBuffer,
 } from "./normalize.js";
