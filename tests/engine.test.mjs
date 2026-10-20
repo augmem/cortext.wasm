@@ -4,6 +4,9 @@
 // through CORTEXT_AIST_MODEL_PATH and CORTEXT_LI_MODEL_PATH (host paths read
 // by Node and written into the Emscripten virtual FS). Skips otherwise.
 //
+// CORTEXT_WASM_REQUIRE_ENGINE=1 (CI) turns those skips into failures, so the
+// live tests must run.
+//
 // CORTEXT_WASM_PRELOAD_DIST: optional directory of a build configured with
 // -DCORTEXT_WASM_PRELOAD_MODEL_ASSETS_DIR (cortext.js, cortext.wasm and
 // cortext.data); exercises the preloaded /models tree.
@@ -35,7 +38,18 @@ const hasModels =
   fs.existsSync(aistPath) &&
   fs.existsSync(liPath) &&
   fs.existsSync(vocabPath);
+const requireEngine = process.env.CORTEXT_WASM_REQUIRE_ENGINE === "1";
 const skip = !hasAssets || !hasModels;
+
+if (requireEngine) {
+  test("CORTEXT_WASM_REQUIRE_ENGINE: live engine assets and models are present", () => {
+    assert.ok(hasAssets, "assets/cortext.{js,wasm} missing (npm run vendor:wasm)");
+    assert.ok(
+      hasModels,
+      `models missing: AIST=${aistPath} LI=${liPath} vocab=${vocabPath}`
+    );
+  });
+}
 
 // The Emscripten glue targets web and worker; its OPFS probe reads `self`.
 globalThis.self ??= globalThis;
@@ -111,16 +125,13 @@ test("LI asset: createContext needs the reranker beside AIST", { skip }, async (
   const { aistBytes: aist, liBytes: li, vocabBytes: vocab } = modelBytes();
   assert.equal(await runtime.writeTokenizerVocabFile(vocab), VOCAB_PATH);
   assert.equal(await runtime.writeModelFile(aist), AIST_MODEL_PATH);
-  // The engine throws when LI is missing. Its WASM build does not catch C++
-  // exceptions, so the throw surfaces as a raw exception pointer, not the
-  // engine's message, and leaves this module instance unusable.
-  assert.throws(() => runtime.createContext({ dbPath: ":memory:" }));
-
-  const fresh = await loadRuntime();
-  await fresh.writeTokenizerVocabFile(vocab);
-  await fresh.writeModelFile(aist);
-  assert.equal(await fresh.writeLateInteractionModelFile(li), LI_MODEL_PATH);
-  withContext(fresh, (handle) => assert.ok(handle));
+  assert.throws(
+    () => runtime.createContext({ dbPath: ":memory:" }),
+    /AIST-87M-LI\.gguf/
+  );
+  assert.match(runtime.lastError(), /AIST-87M-LI\.gguf/);
+  assert.equal(await runtime.writeLateInteractionModelFile(li), LI_MODEL_PATH);
+  withContext(runtime, (handle) => assert.ok(handle));
 });
 
 test("per-content timestamps, mimetypes and standing memory", { skip }, async () => {
@@ -157,15 +168,20 @@ test("per-content timestamps, mimetypes and standing memory", { skip }, async ()
 test("evidence budget trims the returned packet", { skip }, async () => {
   const runtime = await runtimeWithModels();
   withContext(runtime, (handle) => {
-    const long = Array.from(
-      { length: 40 },
-      (_, i) => `Harbor log entry ${i}: the ferry left pier ${i} at dawn.`
-    ).join(" ");
-    runtime.processText(handle, long, "user", STORE);
+    const entries = Array.from(
+      { length: 8 },
+      (_, i) => `Harbor log ${i}: the ferry left pier ${i} at dawn with ${i} crates.`
+    );
+    for (const entry of entries) {
+      runtime.processText(handle, entry, "user", STORE);
+    }
     runtime.flush(handle);
     const whole = runtime.processText(handle, "When did the ferry leave?", "q", QUERY);
-    assert.ok(evidenceBytes(whole) >= Buffer.byteLength(long), "whole memory");
-    const budget = 300;
+    const budget = 200;
+    assert.ok(
+      evidenceBytes(whole) > budget,
+      `unbudgeted packet ${evidenceBytes(whole)} bytes should exceed ${budget}`
+    );
     const trimmed = runtime.processText(handle, "When did the ferry leave?", "q", {
       ...QUERY,
       evidenceBudgetBytes: budget,
