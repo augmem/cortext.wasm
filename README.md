@@ -99,6 +99,19 @@ try {
     retention: "durable",
   });
 
+  // Text remains the canonical embedding input while arbitrary media bytes
+  // are persisted with their MIME type (bytes are never UTF-8 decoded).
+  runtime.processTextWithMedia(
+    handle,
+    "A receipt is attached.",
+    "user/profile",
+    {
+      data: new Uint8Array([0, 255, 1]),
+      mimetype: "application/octet-stream",
+    },
+    { includeEmbedding: false, retention: "durable" }
+  );
+
   const ctx = runtime.processText(
     handle,
     "What should I remember about the garage?",
@@ -130,6 +143,11 @@ returns boolean flags.
 
 Image embedding rejects non-positive dimensions and buffers smaller than
 `width * height * channels` before copying into WASM memory.
+
+`processTextWithMedia` accepts `{ data: Uint8Array | ArrayBuffer, mimetype }`.
+The text is still used for canonical text processing; media bytes are copied
+unchanged and persisted with the supplied MIME type. Pass `null` to omit a
+payload. The media-capable C API must be present in the WASM module.
 
 ## Obtaining `cortext.js` + `cortext.wasm`
 
@@ -185,7 +203,7 @@ requires vendored assets. CI unit tests do **not** require the binaries.
 | `retentionValue` | Pure helper: map retention name/int → C ABI 0–3 |
 | `validateImageBuffer` | Pure helper: dimension / buffer checks |
 | `PACKAGE_VERSION` | Binding version string (`1.2.4`) |
-| Types | `CortextContext`, `Retention`, `ProcessOptions`, `CortextEmscriptenModule`, … |
+| Types | `CortextContext`, `Retention`, `ProcessOptions`, `Media`, `CortextEmscriptenModule`, … |
 | `@augmem/cortext-wasm/module` | Emscripten factory (when assets are vendored) |
 
 ### `CortextWasm` methods
@@ -196,6 +214,7 @@ requires vendored assets. CI unit tests do **not** require the binaries.
 | `mkdirp` / `writeFile` / `writeModelFile` | Virtual FS helpers |
 | `createContext` / `freeContext` | Engine handle lifecycle |
 | `processText(handle, text, sourceId?, options?)` | Memory pipeline (default retention `natural`) |
+| `processTextWithMedia(handle, text, sourceId?, media, options?)` | Text pipeline with arbitrary binary + MIME payload |
 | `embedText` / `embedAudio` / `embedImage` | Embed-only |
 | `consolidate` / `flush` / `reset` | Engine control |
 | `version` / `lastError` | Diagnostics |

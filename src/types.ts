@@ -77,6 +77,14 @@ export interface CortextEmbedding {
   [key: string]: unknown;
 }
 
+/** Caller-provided source payload persisted with a processed signal. */
+export interface Media {
+  /** Arbitrary binary bytes; they are copied without text decoding. */
+  data: Uint8Array | ArrayBuffer;
+  /** MIME type stored alongside the payload (for example, image/png). */
+  mimetype: string;
+}
+
 /** Matches cortext::Retention / C API cortext_retention. */
 export type Retention =
   | "natural"
@@ -165,6 +173,13 @@ export interface CortextEmscriptenModule {
     includeEmbedding: number,
     retention: number,
     evidenceBudgetBytes: number
+  ) => number;
+  _cortext_process_text_with_media_json_with_options?: (
+    handle: number,
+    textPtr: number,
+    sourcePtr: number,
+    mediaPtr: number,
+    optionsPtr: number
   ) => number;
   [key: string]: unknown;
 }
