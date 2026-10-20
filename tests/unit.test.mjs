@@ -120,7 +120,7 @@ test("validateImageBuffer rejects bad dimensions and short buffers", () => {
 test("CortextWasm class is exported", () => {
   assert.equal(typeof esm.CortextWasm, "function");
   assert.equal(typeof esm.CortextWasm.create, "function");
-  assert.equal(esm.PACKAGE_VERSION, "1.2.4");
+  assert.equal(esm.PACKAGE_VERSION, "2.0.0");
 });
 
 function makeFakeModule(overrides = {}) {
@@ -311,8 +311,8 @@ test("validateImageBuffer rejects oversize dimensions", () => {
 });
 
 test("PACKAGE_VERSION and ENGINE_VERSION_TARGET are exported", () => {
-  assert.equal(esm.PACKAGE_VERSION, "1.2.4");
-  assert.equal(esm.ENGINE_VERSION_TARGET, "1.2.4");
+  assert.equal(esm.PACKAGE_VERSION, "2.0.0");
+  assert.equal(esm.ENGINE_VERSION_TARGET, "2.0.0");
 });
 
 test("referenceTimeValue maps unset, numbers, and Dates", () => {

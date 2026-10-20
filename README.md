@@ -12,14 +12,10 @@ package **`@augmem/cortext-wasm`**.
 > **Not** `@augmem/cortext` — that package is the Node N-API binding in
 > [`cortext.ts`](https://github.com/augmem/cortext.ts).
 
-Binding package **1.2.4** targets engine line **v1.2.4** (`ENGINE_VERSION`).
-The unreleased API on `main` (evidence budget, standing memory, typed and
-mixed content, per-content timestamps, reference time, text with media, the
-LI reranker) tracks cortext.cpp `main` and requires the next engine release;
-see [CHANGELOG](./CHANGELOG.md).
-The vendored Emscripten binary reports its own identity via
-`runtime.version()` — rebuild monorepo WASM after engine bumps before
-claiming binary parity.
+Binding package **2.0.0** targets engine **v2.0.0** (`ENGINE_VERSION`) and
+needs it: the C ABI and the `_cortext_wasm_process_text_json` export changed
+in engine 2.0.0. The vendored Emscripten binary reports its own identity via
+`runtime.version()`; vendor a build from the `v2.0.0` tag of cortext.cpp.
 
 ## Install
 
@@ -240,7 +236,12 @@ models/
 ```
 
 Reassemble the GGUF files from cortext.cpp's `models/AIST-87M-GGUF/chunks/`
-and check them against `models/manifest.json` (do not re-shard). Serve
+(a checkout, or `models/` in the release's `cortext-assets-2.0.0.tar.gz`)
+and check them against its `manifest.json` (do not re-shard):
+
+```bash
+node scripts/assemble-models.mjs /path/to/cortext.cpp/models ./models
+``` Serve
 `cortext.data` beside `cortext.js`, or hand it over with Emscripten's
 `getPreloadedPackage` option. `vendor:wasm` copies `cortext.data` for local
 use; `check:wasm` rejects preload builds before publish, since model files
@@ -262,7 +263,7 @@ requires vendored assets. CI unit tests do **not** require the binaries.
 | `validateImageBuffer` | Pure helper: dimension / buffer checks |
 | `evidenceBudgetValue` / `referenceTimeValue` | Pure helpers: validate the budget and reference time for the C ABI |
 | `AIST_MODEL_PATH` / `LI_MODEL_PATH` / `VOCAB_PATH` | Virtual-FS paths the engine reads its model files from |
-| `PACKAGE_VERSION` | Binding version string (`1.2.4`) |
+| `PACKAGE_VERSION` | Binding version string (`2.0.0`) |
 | Types | `CortextContext`, `Retention`, `ProcessOptions`, `Media`, `CortextEmscriptenModule`, … |
 | `@augmem/cortext-wasm/module` | Emscripten factory (when assets are vendored) |
 
@@ -353,8 +354,8 @@ npm test
 node scripts/check-wasm.mjs
 
 # 3) Bump version in package.json + src/index.ts PACKAGE_VERSION + CHANGELOG.md
-git tag v1.2.4
-git push origin v1.2.4
+git tag -a v2.0.0 -m "v2.0.0"
+git push origin v2.0.0
 
 # 4) Publish (assets must be present)
 npm publish --access public

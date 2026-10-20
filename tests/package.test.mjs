@@ -14,7 +14,7 @@ test("package.json follows dual-package publish conventions", () => {
   );
 
   assert.equal(pkg.name, "@augmem/cortext-wasm");
-  assert.equal(pkg.version, "1.2.4");
+  assert.equal(pkg.version, "2.0.0");
   assert.equal(pkg.license, "Apache-2.0");
   assert.ok(pkg.engines?.node);
   assert.equal(pkg.publishConfig?.access, "public");
@@ -83,13 +83,13 @@ test("dual package entry points load CortextWasm", async () => {
   assert.equal(typeof cjs.normalizeContext, "function");
   assert.equal(typeof cjs.retentionValue, "function");
   assert.equal(typeof cjs.validateImageBuffer, "function");
-  assert.equal(cjs.PACKAGE_VERSION, "1.2.4");
+  assert.equal(cjs.PACKAGE_VERSION, "2.0.0");
 
   const esm = await import(
     pathToFileURL(path.join(root, "dist", "esm", "index.js")).href
   );
   assert.equal(typeof esm.CortextWasm, "function");
-  assert.equal(esm.PACKAGE_VERSION, "1.2.4");
+  assert.equal(esm.PACKAGE_VERSION, "2.0.0");
 });
 
 test("package name does not collide with Node N-API package", () => {

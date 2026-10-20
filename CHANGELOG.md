@@ -6,12 +6,11 @@ are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.0] - 2026-10-20
 
-Tracks cortext.cpp `main` (engine v5, per-blob content timestamps and
-reference-time retrieval). **Requires the next engine release:** no released
-engine has these features yet, so the package version and `ENGINE_VERSION`
-stay at 1.2.4 until that release is vendored.
+Requires Cortext engine **v2.0.0** (`ENGINE_VERSION`): the C ABI and the WASM
+process export changed. Tracks engine v5, per-blob content timestamps and
+reference-time retrieval. The binding version now follows the engine major.
 
 ### Breaking
 
@@ -51,9 +50,16 @@ stay at 1.2.4 until that release is vendored.
   virtual-FS constants.
 - `vendor:wasm` copies `cortext.data` from a preload build for local use;
   `check:wasm` rejects preload builds before publish (model files never ship).
+- `scripts/assemble-models.mjs`: reassemble and checksum the AIST, LI and
+  vocab runtime files from an engine `models/` tree (checkout or release
+  tarball) against its `manifest.json`.
 - `tests/engine.test.mjs`: live-engine tests driven by
   `CORTEXT_AIST_MODEL_PATH`, `CORTEXT_LI_MODEL_PATH`, `CORTEXT_VOCAB_PATH` and
-  `CORTEXT_WASM_PRELOAD_DIST`; skipped without them.
+  `CORTEXT_WASM_PRELOAD_DIST`; skipped without them unless
+  `CORTEXT_WASM_REQUIRE_ENGINE=1`.
+- CI `engine-wasm` job: builds the WASM from the `ENGINE_VERSION` tag of
+  cortext.cpp, assembles the models from that release's asset tarball, and
+  runs the live tests with `CORTEXT_WASM_REQUIRE_ENGINE=1`.
 
 ### Fixed
 
