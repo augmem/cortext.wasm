@@ -314,3 +314,34 @@ test("PACKAGE_VERSION and ENGINE_VERSION_TARGET are exported", () => {
   assert.equal(esm.PACKAGE_VERSION, "1.2.4");
   assert.equal(esm.ENGINE_VERSION_TARGET, "1.2.4");
 });
+
+test("mkdirp tolerates Emscripten EEXIST by errno and by code", () => {
+  const made = new Set();
+  const mkdir = (style) => (p) => {
+    if (made.has(p)) {
+      throw style === "errno"
+        ? Object.assign(new Error("FS error"), { name: "ErrnoError", errno: 20 })
+        : Object.assign(new Error("FS error"), { code: "EEXIST" });
+    }
+    made.add(p);
+  };
+  for (const style of ["errno", "code"]) {
+    made.clear();
+    const runtime = new esm.CortextWasm(
+      makeFakeModule({ FS: { mkdir: mkdir(style), writeFile() {} } })
+    );
+    runtime.writeFile("/models/AIST-87M-GGUF/a.gguf", new Uint8Array(1));
+    runtime.writeFile("/models/AIST-87M-GGUF/b.gguf", new Uint8Array(1));
+  }
+  const runtime = new esm.CortextWasm(
+    makeFakeModule({
+      FS: {
+        mkdir() {
+          throw Object.assign(new Error("FS error"), { errno: 44 });
+        },
+        writeFile() {},
+      },
+    })
+  );
+  assert.throws(() => runtime.mkdirp("/x"), /FS error/);
+});

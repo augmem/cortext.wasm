@@ -57,11 +57,7 @@ export class CortextWasm {
       try {
         this.module.FS.mkdir(current);
       } catch (err) {
-        const code =
-          err && typeof err === "object" && "code" in err
-            ? (err as { code?: string }).code
-            : undefined;
-        if (code !== "EEXIST") {
+        if (!isExistsError(err)) {
           throw err;
         }
       }
@@ -397,4 +393,19 @@ export class CortextWasm {
       );
     }
   }
+}
+
+/** Emscripten's EEXIST errno (musl numbering, fixed across releases). */
+const EMSCRIPTEN_EEXIST = 20;
+
+/**
+ * Whether an Emscripten FS error is EEXIST. Older glue set `code`; current
+ * glue (`ErrnoError`) sets only the numeric `errno`.
+ */
+function isExistsError(err: unknown): boolean {
+  if (!err || typeof err !== "object") {
+    return false;
+  }
+  const { code, errno } = err as { code?: unknown; errno?: unknown };
+  return code === "EEXIST" || errno === EMSCRIPTEN_EEXIST;
 }
