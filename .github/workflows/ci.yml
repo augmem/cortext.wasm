@@ -93,6 +93,13 @@ jobs:
           ref: v${{ steps.engine.outputs.version }}
           path: engine
 
+      # Emscripten runs host tools (sqlite's lemon) as .js under node; inside
+      # this workspace they would inherit package.json "type": "module".
+      - name: Move the engine checkout out of the package tree
+        run: |
+          mv engine "$RUNNER_TEMP/cortext.cpp"
+          echo "ENGINE_DIR=$RUNNER_TEMP/cortext.cpp" >> "$GITHUB_ENV"
+
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: 3.1.74
@@ -126,7 +133,7 @@ jobs:
           node scripts/assemble-models.mjs "$RUNNER_TEMP/engine-assets/models" models
 
       - name: Build engine WASM (plain and model-preloaded)
-        working-directory: engine
+        working-directory: ${{ env.ENGINE_DIR }}
         run: |
           set -euo pipefail
           cmake --preset wasm
@@ -138,7 +145,7 @@ jobs:
       - name: Install and build
         run: |
           npm ci
-          npm run vendor:wasm -- --from engine/build-wasm/dist/wasm --force
+          npm run vendor:wasm -- --from "$ENGINE_DIR/build-wasm/dist/wasm" --force
           node scripts/check-wasm.mjs
           npm run build
 
@@ -147,5 +154,5 @@ jobs:
           CORTEXT_WASM_REQUIRE_ENGINE: "1"
           CORTEXT_AIST_MODEL_PATH: ${{ github.workspace }}/models/AIST-87M-GGUF/AIST-87M_q8_0.gguf
           CORTEXT_LI_MODEL_PATH: ${{ github.workspace }}/models/AIST-87M-GGUF/AIST-87M-LI.gguf
-          CORTEXT_WASM_PRELOAD_DIST: ${{ github.workspace }}/engine/build-wasm-preload/dist/wasm
+          CORTEXT_WASM_PRELOAD_DIST: ${{ env.ENGINE_DIR }}/build-wasm-preload/dist/wasm
         run: node --test tests/*.test.mjs
