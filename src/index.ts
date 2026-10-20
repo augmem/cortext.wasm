@@ -6,13 +6,22 @@
  * Node/N-API sibling: https://github.com/augmem/cortext.ts (`@augmem/cortext`)
  */
 
-export { CortextWasm } from "./cortext-wasm.js";
+export {
+  AIST_MODEL_DIR,
+  AIST_MODEL_PATH,
+  CortextWasm,
+  LI_MODEL_FILENAME,
+  LI_MODEL_PATH,
+  VOCAB_PATH,
+} from "./cortext-wasm.js";
 export {
   normalizeContext,
   evidenceBudgetValue,
+  referenceTimeValue,
   retentionValue,
   validateImageBuffer,
 } from "./normalize.js";
+export type { ReferenceTimeValue } from "./normalize.js";
 export type {
   ConsolidationState,
   CortextConfig,
@@ -27,6 +36,7 @@ export type {
   Media,
   ProcessOptions,
   Retention,
+  WriteLateInteractionModelFileOptions,
   WriteModelFileOptions,
 } from "./types.js";
 

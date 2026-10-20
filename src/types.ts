@@ -19,6 +19,11 @@ export interface CortextMemoryContent {
   mimetype: string;
   /** Payload bytes, base64-encoded; decode according to `mimetype`. */
   base64: string;
+  /**
+   * When this payload's signal was observed, in ms since the Unix epoch;
+   * 0 means unknown.
+   */
+  timestamp: number;
 }
 
 /** One retrieved or working-memory item from process* output. */
@@ -77,7 +82,12 @@ export interface CortextEmbedding {
   [key: string]: unknown;
 }
 
-/** Caller-provided source payload persisted with a processed signal. */
+/**
+ * Caller-provided source payload stored in place of the canonical text of a
+ * processed signal. Empty `data` stores the canonical text instead. The MIME
+ * type decides whether the stored payload counts as text (`text/*`) — for
+ * example toward an evidence budget — or as media.
+ */
 export interface Media {
   /** Arbitrary binary bytes; they are copied without text decoding. */
   data: Uint8Array | ArrayBuffer;
@@ -110,6 +120,18 @@ export interface ProcessOptions {
    * reader's tokenizer rate (8,000 tokens at 4.35 chars/token is 34,800).
    */
   evidenceBudgetBytes?: number;
+  /**
+   * Query reference time: a `Date` or ms since the Unix epoch, past or
+   * future. Adds the long-term memories nearest that time as retrieval
+   * candidates. Only `"ephemeral"` (query) calls read it; omitted leaves
+   * retrieval unchanged.
+   */
+  referenceMs?: number | Date;
+  /**
+   * With `referenceMs`: also hide memories stored after it, so the answer is
+   * what was known at that time. Requires `referenceMs`.
+   */
+  asOf?: boolean;
 }
 
 export interface CreateContextOptions {
@@ -117,6 +139,12 @@ export interface CreateContextOptions {
   sensitivity?: number;
   stability?: number;
   dbPath?: string;
+}
+
+/** Where `writeLateInteractionModelFile` places the LI reranker GGUF. */
+export interface WriteLateInteractionModelFileOptions {
+  /** Directory of the AIST model; the engine looks for LI beside it. */
+  directory?: string;
 }
 
 export interface WriteModelFileOptions {
@@ -172,7 +200,10 @@ export interface CortextEmscriptenModule {
     sourcePtr: number,
     includeEmbedding: number,
     retention: number,
-    evidenceBudgetBytes: number
+    evidenceBudgetBytes: number,
+    hasReferenceMs: number,
+    referenceMs: number,
+    asOf: number
   ) => number;
   _cortext_process_text_with_media_json_with_options?: (
     handle: number,

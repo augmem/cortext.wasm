@@ -52,7 +52,11 @@ declare module "@augmem/cortext-wasm/module" {
       textPtr: number,
       sourcePtr: number,
       includeEmbedding: number,
-      retention: number
+      retention: number,
+      evidenceBudgetBytes: number,
+      hasReferenceMs: number,
+      referenceMs: number,
+      asOf: number
     ): number;
     _cortext_process_text_with_media_json_with_options?(
       handle: number,

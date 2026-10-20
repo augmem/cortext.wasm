@@ -60,9 +60,9 @@ test("processText passes the evidence budget to the WASM export", () => {
   });
   assert.deepEqual(ctx.standing_memory, []);
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].slice(3), [1, 3, 34_800]);
+  assert.deepEqual(calls[0].slice(3), [1, 3, 34_800, 0, 0, 0]);
   wasm.processText(1, "q", "query", { retention: "ephemeral" });
-  assert.deepEqual(calls[1].slice(3), [1, 3, 0]);
+  assert.deepEqual(calls[1].slice(3), [1, 3, 0, 0, 0, 0]);
 });
 
 test("normalizeContext keeps string consolidation_state", () => {
@@ -315,6 +315,212 @@ test("PACKAGE_VERSION and ENGINE_VERSION_TARGET are exported", () => {
   assert.equal(esm.ENGINE_VERSION_TARGET, "1.2.4");
 });
 
+test("referenceTimeValue maps unset, numbers, and Dates", () => {
+  assert.deepEqual(esm.referenceTimeValue(), {
+    hasReferenceMs: 0,
+    referenceMs: 0,
+    asOf: 0,
+  });
+  assert.deepEqual(esm.referenceTimeValue(1_700_000_000_000), {
+    hasReferenceMs: 1,
+    referenceMs: 1_700_000_000_000,
+    asOf: 0,
+  });
+  assert.deepEqual(esm.referenceTimeValue(new Date(1_700_000_000_000), true), {
+    hasReferenceMs: 1,
+    referenceMs: 1_700_000_000_000,
+    asOf: 1,
+  });
+  assert.deepEqual(esm.referenceTimeValue(0, true), {
+    hasReferenceMs: 1,
+    referenceMs: 0,
+    asOf: 1,
+  });
+});
+
+test("referenceTimeValue rejects invalid reference times", () => {
+  assert.throws(() => esm.referenceTimeValue(-1), /referenceMs/);
+  assert.throws(() => esm.referenceTimeValue(1.5), /referenceMs/);
+  assert.throws(() => esm.referenceTimeValue(Number.NaN), /referenceMs/);
+  assert.throws(
+    () => esm.referenceTimeValue(Number.MAX_SAFE_INTEGER + 1),
+    /referenceMs/
+  );
+  assert.throws(() => esm.referenceTimeValue(new Date(Number.NaN)), /referenceMs/);
+  assert.throws(() => esm.referenceTimeValue("2026-01-01"), /referenceMs/);
+  assert.throws(() => esm.referenceTimeValue(undefined, true), /asOf/);
+});
+
+test("processText passes the reference time to the WASM export", () => {
+  const calls = [];
+  const fake = makeFakeModule({
+    _cortext_wasm_process_text_json: (...args) => {
+      calls.push(args);
+      const ptr = fake._malloc(16);
+      fake._setString(ptr, '{"consolidation_state":"none"}');
+      return ptr;
+    },
+  });
+  const wasm = new esm.CortextWasm(fake);
+  wasm.processText(1, "q", "query", {
+    retention: "ephemeral",
+    referenceMs: 1_700_000_000_000,
+  });
+  wasm.processText(1, "q", "query", {
+    retention: "ephemeral",
+    referenceMs: new Date(1_600_000_000_000),
+    asOf: true,
+    evidenceBudgetBytes: 2_000,
+  });
+  assert.deepEqual(calls[0].slice(3), [1, 3, 0, 1, 1_700_000_000_000, 0]);
+  assert.deepEqual(calls[1].slice(3), [1, 3, 2_000, 1, 1_600_000_000_000, 1]);
+});
+
+test("processText validates the reference time before allocation", () => {
+  const runtime = new esm.CortextWasm(
+    makeFakeModule({
+      _malloc: () => {
+        throw new Error("WASM allocation should not be attempted");
+      },
+    })
+  );
+  assert.throws(
+    () => runtime.processText(1, "q", "s", { referenceMs: -5 }),
+    /referenceMs/
+  );
+  assert.throws(
+    () => runtime.processText(1, "q", "s", { asOf: true }),
+    /asOf/
+  );
+});
+
+function readU32(heap, ptr) {
+  return (
+    (heap[ptr] |
+      (heap[ptr + 1] << 8) |
+      (heap[ptr + 2] << 16) |
+      (heap[ptr + 3] << 24)) >>>
+    0
+  );
+}
+
+test("processTextWithMedia writes the full v5 process options layout", () => {
+  let options;
+  let mediaPtrSeen;
+  const fake = makeFakeModule();
+  fake._cortext_process_text_with_media_json_with_options = (
+    _handle,
+    _textPtr,
+    _sourcePtr,
+    mediaPtr,
+    optionsPtr
+  ) => {
+    const heap = fake.HEAPU8;
+    mediaPtrSeen = mediaPtr;
+    options = {
+      structSize: readU32(heap, optionsPtr),
+      includeEmbedding: readU32(heap, optionsPtr + 4),
+      retention: readU32(heap, optionsPtr + 8),
+      reserved: readU32(heap, optionsPtr + 12),
+      evidenceBudgetBytes: readU32(heap, optionsPtr + 16),
+      hasReferenceMs: readU32(heap, optionsPtr + 20),
+      asOf: readU32(heap, optionsPtr + 24),
+      referenceMs:
+        readU32(heap, optionsPtr + 32) +
+        readU32(heap, optionsPtr + 36) * 2 ** 32,
+    };
+    const ptr = fake._malloc(16);
+    fake._setString(ptr, '{"consolidation_state":"none"}');
+    return ptr;
+  };
+  const runtime = new esm.CortextWasm(fake);
+  runtime.processTextWithMedia(1, "q", "query", null, {
+    includeEmbedding: false,
+    retention: "ephemeral",
+    evidenceBudgetBytes: 34_800,
+    referenceMs: 1_700_000_000_123,
+    asOf: true,
+  });
+  assert.equal(mediaPtrSeen, 0);
+  assert.deepEqual(options, {
+    structSize: 40,
+    includeEmbedding: 0,
+    retention: 3,
+    reserved: 0,
+    evidenceBudgetBytes: 34_800,
+    hasReferenceMs: 1,
+    asOf: 1,
+    referenceMs: 1_700_000_000_123,
+  });
+
+  runtime.processTextWithMedia(1, "stored", "user", {
+    data: new Uint8Array([1, 2]),
+    mimetype: "image/png",
+  });
+  assert.notEqual(mediaPtrSeen, 0);
+  assert.deepEqual(
+    {
+      evidenceBudgetBytes: options.evidenceBudgetBytes,
+      hasReferenceMs: options.hasReferenceMs,
+      asOf: options.asOf,
+      referenceMs: options.referenceMs,
+      retention: options.retention,
+      includeEmbedding: options.includeEmbedding,
+    },
+    {
+      evidenceBudgetBytes: 0,
+      hasReferenceMs: 0,
+      asOf: 0,
+      referenceMs: 0,
+      retention: 0,
+      includeEmbedding: 1,
+    }
+  );
+});
+
+test("processTextWithMedia validates budget and reference time before allocation", () => {
+  const runtime = new esm.CortextWasm(
+    makeFakeModule({
+      _malloc: () => {
+        throw new Error("WASM allocation should not be attempted");
+      },
+    })
+  );
+  assert.throws(
+    () =>
+      runtime.processTextWithMedia(1, "q", "s", null, {
+        evidenceBudgetBytes: -1,
+      }),
+    /evidenceBudgetBytes/
+  );
+  assert.throws(
+    () => runtime.processTextWithMedia(1, "q", "s", null, { asOf: true }),
+    /asOf/
+  );
+});
+
+test("writeLateInteractionModelFile places the LI reranker beside AIST", async () => {
+  const writes = [];
+  const runtime = new esm.CortextWasm(
+    makeFakeModule({
+      FS: {
+        mkdir() {},
+        writeFile: (p, bytes) => writes.push([p, bytes.length]),
+      },
+    })
+  );
+  const aist = await runtime.writeModelFile(new Uint8Array(3));
+  const li = await runtime.writeLateInteractionModelFile(new Uint8Array(5));
+  assert.equal(aist, "/models/AIST-87M-GGUF/AIST-87M_q8_0.gguf");
+  assert.equal(li, "/models/AIST-87M-GGUF/AIST-87M-LI.gguf");
+  assert.equal(esm.AIST_MODEL_PATH, aist);
+  assert.equal(esm.LI_MODEL_PATH, li);
+  assert.deepEqual(writes, [
+    [aist, 3],
+    [li, 5],
+  ]);
+});
+
 test("mkdirp tolerates Emscripten EEXIST by errno and by code", () => {
   const made = new Set();
   const mkdir = (style) => (p) => {
@@ -344,4 +550,19 @@ test("mkdirp tolerates Emscripten EEXIST by errno and by code", () => {
     })
   );
   assert.throws(() => runtime.mkdirp("/x"), /FS error/);
+});
+
+test("writeTokenizerVocabFile places vocab.txt in the engine model tree", async () => {
+  const writes = [];
+  const runtime = new esm.CortextWasm(
+    makeFakeModule({
+      FS: { mkdir() {}, writeFile: (p) => writes.push(p) },
+    })
+  );
+  assert.equal(
+    await runtime.writeTokenizerVocabFile(new Uint8Array(2)),
+    "/models/mdbr-leaf-ir/vocab.txt"
+  );
+  assert.equal(esm.VOCAB_PATH, "/models/mdbr-leaf-ir/vocab.txt");
+  assert.deepEqual(writes, ["/models/mdbr-leaf-ir/vocab.txt"]);
 });

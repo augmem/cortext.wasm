@@ -1,6 +1,7 @@
 import {
   normalizeContext,
   evidenceBudgetValue,
+  referenceTimeValue,
   retentionValue,
   validateImageBuffer,
 } from "./normalize.js";
@@ -13,8 +14,26 @@ import type {
   CreateContextOptions,
   Media,
   ProcessOptions,
+  WriteLateInteractionModelFileOptions,
   WriteModelFileOptions,
 } from "./types.js";
+
+/** Virtual-FS directory the engine searches for the AIST model. */
+export const AIST_MODEL_DIR = "/models/AIST-87M-GGUF";
+/** Default virtual-FS path of the AIST GGUF encoder. */
+export const AIST_MODEL_PATH = `${AIST_MODEL_DIR}/AIST-87M_q8_0.gguf`;
+/** File name of the late-interaction reranker the engine requires with AIST. */
+export const LI_MODEL_FILENAME = "AIST-87M-LI.gguf";
+/** Default virtual-FS path of the late-interaction reranker GGUF. */
+export const LI_MODEL_PATH = `${AIST_MODEL_DIR}/${LI_MODEL_FILENAME}`;
+
+/** Default virtual-FS path of the AIST WordPiece tokenizer vocabulary. */
+export const VOCAB_PATH = "/models/mdbr-leaf-ir/vocab.txt";
+
+/** sizeof(cortext_process_json_options) on wasm32 (v5 layout). */
+const PROCESS_OPTIONS_BYTES = 40;
+/** sizeof(cortext_media) on wasm32: { data*, size_t size, mimetype* }. */
+const MEDIA_DESCRIPTOR_BYTES = 12;
 
 /**
  * Browser WebAssembly convenience wrapper over the Cortext C ABI.
@@ -27,7 +46,8 @@ import type {
  * import { CortextWasm } from "@augmem/cortext-wasm";
  *
  * const runtime = await CortextWasm.create(createCortextModule);
- * await runtime.writeModelFile(fileInput.files[0]);
+ * await runtime.writeModelFile(aistFile);
+ * await runtime.writeLateInteractionModelFile(liFile);
  * const handle = runtime.createContext({ dbPath: ":memory:" });
  * const ctx = runtime.processText(handle, "hello", "browser");
  * ```
@@ -80,20 +100,40 @@ export class CortextWasm {
   async writeModelFile(
     file: Blob | ArrayBuffer | Uint8Array,
     {
-      directory = "/models/AIST-87M-GGUF",
+      directory = AIST_MODEL_DIR,
       filename = "AIST-87M_q8_0.gguf",
     }: WriteModelFileOptions = {}
   ): Promise<string> {
-    let bytes: Uint8Array;
-    if (file instanceof Uint8Array) {
-      bytes = file;
-    } else if (file instanceof ArrayBuffer) {
-      bytes = new Uint8Array(file);
-    } else {
-      bytes = new Uint8Array(await file.arrayBuffer());
-    }
     const path = `${directory}/${filename}`;
-    this.writeFile(path, bytes);
+    this.writeFile(path, await modelBytes(file));
+    return path;
+  }
+
+  /**
+   * Load the late-interaction reranker GGUF (`AIST-87M-LI.gguf`) into the
+   * virtual filesystem beside the AIST model. The engine requires it whenever
+   * an AIST model is present: `createContext` throws without it. Pass the same
+   * `directory` given to `writeModelFile`.
+   */
+  async writeLateInteractionModelFile(
+    file: Blob | ArrayBuffer | Uint8Array,
+    { directory = AIST_MODEL_DIR }: WriteLateInteractionModelFileOptions = {}
+  ): Promise<string> {
+    const path = `${directory}/${LI_MODEL_FILENAME}`;
+    this.writeFile(path, await modelBytes(file));
+    return path;
+  }
+
+  /**
+   * Load the AIST tokenizer vocabulary (`mdbr-leaf-ir/vocab.txt` in the
+   * engine's model tree) into the virtual filesystem. The engine reads it
+   * from `<models>/mdbr-leaf-ir/vocab.txt`, beside the AIST model directory.
+   */
+  async writeTokenizerVocabFile(
+    file: Blob | ArrayBuffer | Uint8Array,
+    { path = VOCAB_PATH }: { path?: string } = {}
+  ): Promise<string> {
+    this.writeFile(path, await modelBytes(file));
     return path;
   }
 
@@ -166,11 +206,14 @@ export class CortextWasm {
       includeEmbedding = true,
       retention = "natural",
       evidenceBudgetBytes,
+      referenceMs,
+      asOf = false,
     }: ProcessOptions = {}
   ): CortextContext {
     // Validate options before WASM allocations so callers get a clean TypeError.
     const retentionCode = retentionValue(retention);
     const evidenceBudget = evidenceBudgetValue(evidenceBudgetBytes);
+    const referenceTime = referenceTimeValue(referenceMs, asOf);
     const textPtr = this.#writeString(text);
     const sourcePtr = this.#writeString(sourceId);
     try {
@@ -182,7 +225,10 @@ export class CortextWasm {
             sourcePtr,
             includeEmbedding ? 1 : 0,
             retentionCode,
-            evidenceBudget
+            evidenceBudget,
+            referenceTime.hasReferenceMs,
+            referenceTime.referenceMs,
+            referenceTime.asOf
           )
         )
       );
@@ -194,27 +240,47 @@ export class CortextWasm {
 
   /**
    * Process canonical text while storing an optional caller-provided media
-   * payload. The payload bytes are copied into WASM memory and passed with
-   * their MIME type; the text remains the canonical embedding input.
+   * payload in its place. The payload bytes are copied into WASM memory and
+   * passed with their MIME type; the text remains the canonical embedding
+   * input. `null` or empty `data` stores the canonical text.
    *
-   * Requires a WASM module built from the media-capable C API. Passing null
-   * preserves the C API's no-payload behavior without changing processText.
+   * Takes the same options as `processText`, including the evidence budget
+   * and query reference time.
    */
   processTextWithMedia(
     handle: CortextHandle,
     text: string,
     sourceId = "browser",
     media: Media | null = null,
-    { includeEmbedding = true, retention = "natural" }: ProcessOptions = {}
+    {
+      includeEmbedding = true,
+      retention = "natural",
+      evidenceBudgetBytes,
+      referenceMs,
+      asOf = false,
+    }: ProcessOptions = {}
   ): CortextContext {
-    // Validate retention before any WASM allocation, matching processText.
+    // Validate options before any WASM allocation, matching processText.
     const retentionCode = retentionValue(retention);
+    const evidenceBudget = evidenceBudgetValue(evidenceBudgetBytes);
+    const referenceTime = referenceTimeValue(referenceMs, asOf);
     const processTextWithMedia =
       this.module._cortext_process_text_with_media_json_with_options;
     if (typeof processTextWithMedia !== "function") {
       throw new Error(
         "processTextWithMedia requires a media-capable WASM asset; update the loaded asset before calling this method"
       );
+    }
+    let data: Uint8Array | null = null;
+    if (media !== null) {
+      data =
+        media.data instanceof Uint8Array ? media.data : new Uint8Array(media.data);
+      if (data.byteLength > 0xffffffff) {
+        throw new RangeError("media payload exceeds the native size range");
+      }
+      if (typeof media.mimetype !== "string") {
+        throw new TypeError("media mimetype must be a string");
+      }
     }
     let textPtr = 0;
     let sourcePtr = 0;
@@ -226,18 +292,7 @@ export class CortextWasm {
       textPtr = this.#writeString(text);
       sourcePtr = this.#writeString(sourceId);
 
-      if (media !== null) {
-        const data =
-          media.data instanceof Uint8Array
-            ? media.data
-            : new Uint8Array(media.data);
-        if (data.byteLength > 0xffffffff) {
-          throw new RangeError("media payload exceeds the native size range");
-        }
-        if (typeof media.mimetype !== "string") {
-          throw new TypeError("media mimetype must be a string");
-        }
-
+      if (media !== null && data !== null) {
         if (data.byteLength > 0) {
           dataPtr = this.module._malloc(data.byteLength);
           if (!dataPtr) {
@@ -248,28 +303,29 @@ export class CortextWasm {
         mimetypePtr = this.#writeString(media.mimetype);
 
         // cortext_media is { const uint8_t* data; size_t size;
-        // const char* mimetype; }. Emscripten's wasm32 ABI uses 12 bytes.
-        mediaPtr = this.module._malloc(12);
-        if (!mediaPtr) {
-          throw new Error("Failed to allocate media descriptor");
-        }
+        // const char* mimetype; } (12 bytes on wasm32).
+        mediaPtr = this.#mallocZeroed(MEDIA_DESCRIPTOR_BYTES);
         this.#writeUint32(mediaPtr, dataPtr);
         this.#writeUint32(mediaPtr + 4, data.byteLength);
         this.#writeUint32(mediaPtr + 8, mimetypePtr);
       }
 
-      // cortext_process_json_options is { size_t struct_size; int
-      // include_embedding; int retention; int reserved; } (16 bytes on
-      // wasm32). Use the media-capable JSON C API directly so arbitrary bytes
-      // are not coerced through a JavaScript string or base64 representation.
-      optionsPtr = this.module._malloc(16);
-      if (!optionsPtr) {
-        throw new Error("Failed to allocate process options");
-      }
-      this.#writeUint32(optionsPtr, 16);
+      // cortext_process_json_options on wasm32 (40 bytes): size_t struct_size
+      // @0, int include_embedding @4, int retention @8, int reserved @12,
+      // size_t evidence_budget_bytes @16, int has_reference_ms @20, int as_of
+      // @24, (pad) uint64_t reference_ms @32.
+      optionsPtr = this.#mallocZeroed(PROCESS_OPTIONS_BYTES);
+      this.#writeUint32(optionsPtr, PROCESS_OPTIONS_BYTES);
       this.#writeUint32(optionsPtr + 4, includeEmbedding ? 1 : 0);
       this.#writeUint32(optionsPtr + 8, retentionCode);
-      this.#writeUint32(optionsPtr + 12, 0);
+      this.#writeUint32(optionsPtr + 16, evidenceBudget);
+      this.#writeUint32(optionsPtr + 20, referenceTime.hasReferenceMs);
+      this.#writeUint32(optionsPtr + 24, referenceTime.asOf);
+      this.#writeUint32(optionsPtr + 32, referenceTime.referenceMs % 2 ** 32);
+      this.#writeUint32(
+        optionsPtr + 36,
+        Math.floor(referenceTime.referenceMs / 2 ** 32)
+      );
 
       return normalizeContext(
         this.#readRawJson(
@@ -352,6 +408,15 @@ export class CortextWasm {
     }
   }
 
+  #mallocZeroed(size: number): number {
+    const ptr = this.module._malloc(size);
+    if (!ptr) {
+      throw new Error("Failed to allocate WASM struct");
+    }
+    this.module.HEAPU8.fill(0, ptr, ptr + size);
+    return ptr;
+  }
+
   #writeUint32(ptr: number, value: number): void {
     if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
       throw new RangeError("WASM field exceeds the uint32 range");
@@ -408,4 +473,16 @@ function isExistsError(err: unknown): boolean {
   }
   const { code, errno } = err as { code?: unknown; errno?: unknown };
   return code === "EEXIST" || errno === EMSCRIPTEN_EEXIST;
+}
+
+async function modelBytes(
+  file: Blob | ArrayBuffer | Uint8Array
+): Promise<Uint8Array> {
+  if (file instanceof Uint8Array) {
+    return file;
+  }
+  if (file instanceof ArrayBuffer) {
+    return new Uint8Array(file);
+  }
+  return new Uint8Array(await file.arrayBuffer());
 }
