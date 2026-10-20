@@ -12,10 +12,10 @@ package **`@augmem/cortext-wasm`**.
 > **Not** `@augmem/cortext` — that package is the Node N-API binding in
 > [`cortext.ts`](https://github.com/augmem/cortext.ts).
 
-Binding package **1.2.4** targets engine line **v1.2.4** (`ENGINE_VERSION`).
-The vendored Emscripten binary reports its own identity via
-`runtime.version()` — rebuild monorepo WASM after engine bumps before
-claiming binary parity.
+Binding package **2.0.0** targets engine **v2.0.0** (`ENGINE_VERSION`) and
+needs it: the C ABI and the `_cortext_wasm_process_text_json` export changed
+in engine 2.0.0. The vendored Emscripten binary reports its own identity via
+`runtime.version()`; vendor a build from the `v2.0.0` tag of cortext.cpp.
 
 ## Install
 
@@ -82,9 +82,13 @@ const runtime = await CortextWasm.create(createCortextModule, {
       : file,
 });
 
-// Load the AIST GGUF embedding model into the Emscripten VFS
-const file = document.querySelector<HTMLInputElement>("#model")!.files![0];
-await runtime.writeModelFile(file);
+// Load the engine's model files into the Emscripten VFS (or preload them at
+// build time, below): the AIST encoder, the late-interaction reranker the
+// engine requires beside it, and the tokenizer vocabulary.
+const [aist, li, vocab] = document.querySelector<HTMLInputElement>("#models")!.files!;
+await runtime.writeModelFile(aist);                // AIST-87M_q8_0.gguf
+await runtime.writeLateInteractionModelFile(li);   // AIST-87M-LI.gguf
+await runtime.writeTokenizerVocabFile(vocab);      // mdbr-leaf-ir/vocab.txt
 
 const handle = runtime.createContext({
   focus: 0.55,
@@ -99,16 +103,48 @@ try {
     retention: "durable",
   });
 
+  // Text remains the canonical embedding input while arbitrary media bytes
+  // are persisted with their MIME type (bytes are never UTF-8 decoded).
+  runtime.processTextWithMedia(
+    handle,
+    "A receipt is attached.",
+    "user/profile",
+    {
+      data: new Uint8Array([0, 255, 1]),
+      mimetype: "application/octet-stream",
+    },
+    { includeEmbedding: false, retention: "durable" }
+  );
+
   const ctx = runtime.processText(
     handle,
     "What should I remember about the garage?",
     "chat/assistant",
-    { includeEmbedding: false, retention: "ephemeral" }
+    {
+      includeEmbedding: false,
+      retention: "ephemeral",
+      // Optional: fit the packet in ~8,000 tokens (4.35 chars/token).
+      evidenceBudgetBytes: 34_800,
+    }
   );
 
-  for (const item of ctx.retrieved_memory ?? []) {
-    console.log(item.text, item.relevance, item.composite_score);
+  // Standing directives ("Always ...") come back outside the ranked list.
+  for (const item of [...(ctx.standing_memory ?? []), ...(ctx.retrieved_memory ?? [])]) {
+    // Every signal payload of the memory, each with its own MIME type and
+    // timestamp (ms; 0 = unknown); modality is the one its signals share, or
+    // "mixed".
+    const payloads = (item.content ?? []).map((c) => [c.mimetype, c.timestamp]);
+    console.log(item.modality, payloads, item.relevance, item.composite_score);
   }
+
+  // Ask as of a past time: memories nearest it join the candidates, and
+  // asOf hides anything stored after it.
+  runtime.processText(handle, "What was the garage code then?", "chat/assistant", {
+    includeEmbedding: false,
+    retention: "ephemeral",
+    referenceMs: new Date("2026-01-01T00:00:00Z"),
+    asOf: true,
+  });
 
   if (ctx.consolidation_state !== "none") {
     runtime.consolidate(handle);
@@ -125,8 +161,25 @@ Decoded process maps always include `consolidation_state`
 (`none` \| `recommended` \| `required`), including when older engine JSON only
 returns boolean flags.
 
+`ProcessOptions` (shared by `processText` and `processTextWithMedia`):
+
+| Option | Notes |
+| --- | --- |
+| `includeEmbedding` | Return the processed signal's embedding (default `true`) |
+| `retention` | `natural` (default), `durable`, `boundary`, `ephemeral` |
+| `evidenceBudgetBytes` | Per-call evidence budget in bytes; omitted or `0` returns whole memories. Text counts its UTF-8 bytes, other payloads 480 bytes each; `standing_memory` counts too |
+| `referenceMs` | Query reference time (`Date` or ms since the epoch); read by `ephemeral` calls only |
+| `asOf` | With `referenceMs`: hide memories stored after it |
+
 Image embedding rejects non-positive dimensions and buffers smaller than
 `width * height * channels` before copying into WASM memory.
+
+`processTextWithMedia` accepts `{ data: Uint8Array | ArrayBuffer, mimetype }`.
+The text is still used for canonical text processing; media bytes are copied
+unchanged and stored with the supplied MIME type in place of the text. `null`
+or empty `data` stores the canonical text. A `text/*` MIME type counts as text
+(for example toward an evidence budget). It takes the same options as
+`processText`.
 
 ## Obtaining `cortext.js` + `cortext.wasm`
 
@@ -158,14 +211,41 @@ Search order for `vendor:wasm`:
 3. `../cortext/build-wasm/dist/wasm`
 4. `../../cortext/build-wasm/dist/wasm`
 
+Or build with CMake from a cortext.cpp checkout:
+
+```bash
+cmake --preset wasm && cmake --build build-wasm --target cortext_wasm
+node scripts/vendor-wasm.mjs --from /path/to/cortext.cpp/build-wasm/dist/wasm
+```
+
 ### B) Build-time model preload (engine monorepo)
 
 ```bash
-./build-wasm.sh -DCORTEXT_WASM_PRELOAD_MODEL_ASSETS_DIR="$PWD/models"
+cmake --preset wasm -DCORTEXT_WASM_PRELOAD_MODEL_ASSETS_DIR="$PWD/models"
 ```
 
-Preloading writes the model directory to `/models` inside the virtual FS so
-runtime `writeModelFile` is optional for demos.
+Preloading packs the model directory into `cortext.data`, mounted at
+`/models` in the virtual FS, so the `write*File` model helpers are optional
+for demos. The directory must hold the assembled tree the engine resolves:
+
+```text
+models/
+  AIST-87M-GGUF/AIST-87M_q8_0.gguf
+  AIST-87M-GGUF/AIST-87M-LI.gguf      # late-interaction reranker (required)
+  mdbr-leaf-ir/vocab.txt
+```
+
+Reassemble the GGUF files from cortext.cpp's `models/AIST-87M-GGUF/chunks/`
+(a checkout, or `models/` in the release's `cortext-assets-2.0.0.tar.gz`)
+and check them against its `manifest.json` (do not re-shard):
+
+```bash
+node scripts/assemble-models.mjs /path/to/cortext.cpp/models ./models
+``` Serve
+`cortext.data` beside `cortext.js`, or hand it over with Emscripten's
+`getPreloadedPackage` option. `vendor:wasm` copies `cortext.data` for local
+use; `check:wasm` rejects preload builds before publish, since model files
+never ship on npm.
 
 ### C) Publish path
 
@@ -181,8 +261,10 @@ requires vendored assets. CI unit tests do **not** require the binaries.
 | `normalizeContext` | Pure helper: ensure `consolidation_state` on process JSON |
 | `retentionValue` | Pure helper: map retention name/int → C ABI 0–3 |
 | `validateImageBuffer` | Pure helper: dimension / buffer checks |
-| `PACKAGE_VERSION` | Binding version string (`1.2.4`) |
-| Types | `CortextContext`, `Retention`, `ProcessOptions`, `CortextEmscriptenModule`, … |
+| `evidenceBudgetValue` / `referenceTimeValue` | Pure helpers: validate the budget and reference time for the C ABI |
+| `AIST_MODEL_PATH` / `LI_MODEL_PATH` / `VOCAB_PATH` | Virtual-FS paths the engine reads its model files from |
+| `PACKAGE_VERSION` | Binding version string (`2.0.0`) |
+| Types | `CortextContext`, `Retention`, `ProcessOptions`, `Media`, `CortextEmscriptenModule`, … |
 | `@augmem/cortext-wasm/module` | Emscripten factory (when assets are vendored) |
 
 ### `CortextWasm` methods
@@ -190,9 +272,11 @@ requires vendored assets. CI unit tests do **not** require the binaries.
 | Method | Notes |
 | --- | --- |
 | `static create(factory, options?)` | Await Emscripten init |
-| `mkdirp` / `writeFile` / `writeModelFile` | Virtual FS helpers |
+| `mkdirp` / `writeFile` | Virtual FS helpers |
+| `writeModelFile` / `writeLateInteractionModelFile` / `writeTokenizerVocabFile` | Load AIST, the LI reranker and the tokenizer vocab into `/models` |
 | `createContext` / `freeContext` | Engine handle lifecycle |
 | `processText(handle, text, sourceId?, options?)` | Memory pipeline (default retention `natural`) |
+| `processTextWithMedia(handle, text, sourceId?, media, options?)` | Text pipeline storing caller media bytes + MIME type |
 | `embedText` / `embedAudio` / `embedImage` | Embed-only |
 | `consolidate` / `flush` / `reset` | Engine control |
 | `version` / `lastError` | Diagnostics |
@@ -204,7 +288,9 @@ with explicit dimensions.
 
 | Concern | Notes |
 | --- | --- |
-| AIST GGUF model | Still required; load via `writeModelFile` or build-time preload |
+| AIST GGUF model | Required; load via `writeModelFile` or build-time preload |
+| LI reranker (`AIST-87M-LI.gguf`) | Required beside AIST; `writeLateInteractionModelFile` or preload |
+| Tokenizer vocab | `/models/mdbr-leaf-ir/vocab.txt`; `writeTokenizerVocabFile` or preload |
 | `locateFile` | Pass through Emscripten options when `.wasm` is not co-located |
 | OPFS | Engine glue may mount OPFS when available (engine build dependent) |
 | Node | Unit tests run without WASM; live engine needs Node WebAssembly + assets |
@@ -234,6 +320,13 @@ npm run vendor:wasm
 npm run build
 npm test          # build + all tests (smoke skips if no assets)
 npm run test:unit # wrapper-only tests (no WASM required)
+
+# Live engine tests (skip unless the vendored assets and models are present)
+CORTEXT_AIST_MODEL_PATH=/path/to/models/AIST-87M-GGUF/AIST-87M_q8_0.gguf \
+CORTEXT_LI_MODEL_PATH=/path/to/models/AIST-87M-GGUF/AIST-87M-LI.gguf \
+node --test tests/engine.test.mjs
+# CORTEXT_VOCAB_PATH overrides <models>/mdbr-leaf-ir/vocab.txt;
+# CORTEXT_WASM_PRELOAD_DIST=<preload build dist/wasm> adds the preload test.
 ```
 
 ### Build scripts
@@ -261,8 +354,8 @@ npm test
 node scripts/check-wasm.mjs
 
 # 3) Bump version in package.json + src/index.ts PACKAGE_VERSION + CHANGELOG.md
-git tag v1.2.4
-git push origin v1.2.4
+git tag -a v2.0.0 -m "v2.0.0"
+git push origin v2.0.0
 
 # 4) Publish (assets must be present)
 npm publish --access public

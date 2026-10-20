@@ -36,6 +36,66 @@ export function retentionValue(retention: Retention = "natural"): number {
 }
 
 /**
+ * Validate an evidence budget (bytes) for the C ABI: omitted or 0 = unset.
+ * @throws {TypeError} when the value is not a whole number of bytes that fits
+ * the 32-bit WASM size_t.
+ */
+export function evidenceBudgetValue(evidenceBudgetBytes?: number): number {
+  if (evidenceBudgetBytes === undefined) {
+    return 0;
+  }
+  if (
+    typeof evidenceBudgetBytes !== "number" ||
+    !Number.isInteger(evidenceBudgetBytes) ||
+    evidenceBudgetBytes < 0 ||
+    evidenceBudgetBytes > 0xffffffff
+  ) {
+    throw new TypeError(
+      "evidenceBudgetBytes must be a whole number of bytes (0 to 2^32-1)"
+    );
+  }
+  return evidenceBudgetBytes;
+}
+
+/** C ABI view of a query reference time (cortext_process_json_options). */
+export interface ReferenceTimeValue {
+  /** 1 when `referenceMs` is set, else 0 (retrieval unchanged). */
+  hasReferenceMs: number;
+  /** Reference time in ms since the Unix epoch (0 when unset). */
+  referenceMs: number;
+  /** 1 when memories stored after `referenceMs` are hidden, else 0. */
+  asOf: number;
+}
+
+/**
+ * Validate a query reference time for the C ABI.
+ *
+ * `referenceMs` is ms since the Unix epoch (a whole, non-negative safe
+ * integer) or a `Date`; omitted leaves retrieval unchanged. `asOf` hides
+ * memories stored after it and needs `referenceMs`.
+ * @throws {TypeError} when the time is not a whole non-negative ms value, or
+ * when `asOf` is set without `referenceMs`.
+ */
+export function referenceTimeValue(
+  referenceMs?: number | Date,
+  asOf = false
+): ReferenceTimeValue {
+  if (referenceMs === undefined) {
+    if (asOf) {
+      throw new TypeError("asOf needs referenceMs");
+    }
+    return { hasReferenceMs: 0, referenceMs: 0, asOf: 0 };
+  }
+  const ms = referenceMs instanceof Date ? referenceMs.getTime() : referenceMs;
+  if (typeof ms !== "number" || !Number.isSafeInteger(ms) || ms < 0) {
+    throw new TypeError(
+      "referenceMs must be a Date or whole ms since the Unix epoch (0 to 2^53-1)"
+    );
+  }
+  return { hasReferenceMs: 1, referenceMs: ms, asOf: asOf ? 1 : 0 };
+}
+
+/**
  * Ensure public process* objects always expose `consolidation_state`.
  * Older engine JSON emitted boolean consolidation_recommended/required only.
  */

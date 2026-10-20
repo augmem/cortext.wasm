@@ -19,6 +19,7 @@ node_modules/
 # Vendored Emscripten artifacts (copy via npm run vendor:wasm; publish ships them)
 /assets/cortext.js
 /assets/cortext.wasm
+/assets/cortext.data
 /assets/.vendor-source
 
 # Optional local model trees
@@ -26,6 +27,7 @@ node_modules/
 .cortext-assets/
 **/AIST-87M-GGUF/AIST-87M_q8_0.gguf
 **/AIST-87M-GGUF/AIST-87M_q5_1.gguf
+**/AIST-87M-GGUF/AIST-87M-LI.gguf
 
 # Test / coverage
 /coverage/

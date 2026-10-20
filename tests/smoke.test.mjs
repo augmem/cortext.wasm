@@ -9,6 +9,15 @@ const wasmPath = path.join(root, "assets", "cortext.wasm");
 const jsPath = path.join(root, "assets", "cortext.js");
 const hasAssets = fs.existsSync(wasmPath) && fs.existsSync(jsPath);
 
+// The Emscripten glue targets web and worker; its OPFS probe reads `self`.
+globalThis.self ??= globalThis;
+
+if (process.env.CORTEXT_WASM_REQUIRE_ENGINE === "1") {
+  test("CORTEXT_WASM_REQUIRE_ENGINE: vendored WASM assets are present", () => {
+    assert.ok(hasAssets, "assets/cortext.{js,wasm} missing (npm run vendor:wasm)");
+  });
+}
+
 test(
   "WASM module factory loads and reports version",
   { skip: !hasAssets },

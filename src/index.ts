@@ -6,12 +6,22 @@
  * Node/N-API sibling: https://github.com/augmem/cortext.ts (`@augmem/cortext`)
  */
 
-export { CortextWasm } from "./cortext-wasm.js";
+export {
+  AIST_MODEL_DIR,
+  AIST_MODEL_PATH,
+  CortextWasm,
+  LI_MODEL_FILENAME,
+  LI_MODEL_PATH,
+  VOCAB_PATH,
+} from "./cortext-wasm.js";
 export {
   normalizeContext,
+  evidenceBudgetValue,
+  referenceTimeValue,
   retentionValue,
   validateImageBuffer,
 } from "./normalize.js";
+export type { ReferenceTimeValue } from "./normalize.js";
 export type {
   ConsolidationState,
   CortextConfig,
@@ -20,20 +30,23 @@ export type {
   CortextEmscriptenModule,
   CortextHandle,
   CortextMemory,
+  CortextMemoryContent,
   CortextModuleFactory,
   CreateContextOptions,
+  Media,
   ProcessOptions,
   Retention,
+  WriteLateInteractionModelFileOptions,
   WriteModelFileOptions,
 } from "./types.js";
 
 /**
  * Binding package version (this npm package).
- * Target engine line is documented in `ENGINE_VERSION` (default 1.2.4).
+ * Target engine line is documented in `ENGINE_VERSION` (2.0.0).
  * A vendored `assets/cortext.wasm` may report an older engine `version()` until
  * rebuilt from the monorepo — always check `runtime.version()` at runtime.
  */
-export const PACKAGE_VERSION = "1.2.4";
+export const PACKAGE_VERSION = "2.0.0";
 
 /** Intended engine assets / C ABI line for this binding release. */
-export const ENGINE_VERSION_TARGET = "1.2.4";
+export const ENGINE_VERSION_TARGET = "2.0.0";

@@ -75,3 +75,84 @@ jobs:
           else
             echo "No WASM assets present; smoke skipped"
           fi
+
+  # Live engine tests: the WASM built from the ENGINE_VERSION tag of
+  # cortext.cpp, with the models from that release's asset tarball.
+  engine-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read engine version
+        id: engine
+        run: echo "version=$(tr -d '[:space:]' < ENGINE_VERSION)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: augmem/cortext.cpp
+          ref: v${{ steps.engine.outputs.version }}
+          path: engine
+
+      # Emscripten runs host tools (sqlite's lemon) as .js under node; inside
+      # this workspace they would inherit package.json "type": "module".
+      - name: Move the engine checkout out of the package tree
+        run: |
+          mv engine "$RUNNER_TEMP/cortext.cpp"
+          echo "ENGINE_DIR=$RUNNER_TEMP/cortext.cpp" >> "$GITHUB_ENV"
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.74
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Cache assembled models
+        id: models
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: cortext-models-${{ steps.engine.outputs.version }}
+
+      - name: Assemble models from the engine release
+        if: steps.models.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.engine.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/engine-assets"
+          cd "$RUNNER_TEMP/engine-assets"
+          gh release download "v$VERSION" -R augmem/cortext.cpp \
+            -p "cortext-assets-$VERSION.tar.gz" -p "cortext-assets-$VERSION.tar.gz.sha256"
+          sha256sum -c "cortext-assets-$VERSION.tar.gz.sha256"
+          tar xzf "cortext-assets-$VERSION.tar.gz" models
+          cd "$GITHUB_WORKSPACE"
+          node scripts/assemble-models.mjs "$RUNNER_TEMP/engine-assets/models" models
+
+      - name: Build engine WASM (plain and model-preloaded)
+        working-directory: ${{ env.ENGINE_DIR }}
+        run: |
+          set -euo pipefail
+          cmake --preset wasm
+          cmake --build --preset wasm -j 4
+          cmake --preset wasm -B build-wasm-preload \
+            -DCORTEXT_WASM_PRELOAD_MODEL_ASSETS_DIR="$GITHUB_WORKSPACE/models"
+          cmake --build build-wasm-preload --target cortext_wasm -j 4
+
+      - name: Install and build
+        run: |
+          npm ci
+          npm run vendor:wasm -- --from "$ENGINE_DIR/build-wasm/dist/wasm" --force
+          node scripts/check-wasm.mjs
+          npm run build
+
+      - name: Live engine tests (required)
+        env:
+          CORTEXT_WASM_REQUIRE_ENGINE: "1"
+          CORTEXT_AIST_MODEL_PATH: ${{ github.workspace }}/models/AIST-87M-GGUF/AIST-87M_q8_0.gguf
+          CORTEXT_LI_MODEL_PATH: ${{ github.workspace }}/models/AIST-87M-GGUF/AIST-87M-LI.gguf
+          CORTEXT_WASM_PRELOAD_DIST: ${{ env.ENGINE_DIR }}/build-wasm-preload/dist/wasm
+        run: node --test tests/*.test.mjs

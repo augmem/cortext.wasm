@@ -1,6 +1,6 @@
 {
   "name": "@augmem/cortext-wasm",
-  "version": "1.2.4",
+  "version": "2.0.0",
   "description": "Browser WebAssembly bindings for the Cortext memory engine",
   "license": "Apache-2.0",
   "author": "augmem",
