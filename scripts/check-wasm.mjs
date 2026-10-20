@@ -39,6 +39,26 @@ if (fs.existsSync(vendorSource)) {
   }
 }
 
+// A preload build (-DCORTEXT_WASM_PRELOAD_MODEL_ASSETS_DIR) embeds the model
+// tree in cortext.data and its glue fetches that file at startup. Model files
+// never ship on npm, and the glue would fail without its .data.
+if (fs.existsSync(path.join(assetsDir, "cortext.data"))) {
+  fail(
+    "assets/cortext.data is a preloaded model tree; vendor a build without " +
+      "CORTEXT_WASM_PRELOAD_MODEL_ASSETS_DIR before publish"
+  );
+}
+const glue = path.join(assetsDir, "cortext.js");
+if (
+  fs.existsSync(glue) &&
+  fs.readFileSync(glue, "utf8").includes("cortext.data")
+) {
+  fail(
+    "assets/cortext.js expects a preloaded cortext.data; vendor a build " +
+      "without CORTEXT_WASM_PRELOAD_MODEL_ASSETS_DIR before publish"
+  );
+}
+
 const required = [
   { name: "cortext.js", min: MIN_JS_BYTES },
   { name: "cortext.wasm", min: MIN_WASM_BYTES },
